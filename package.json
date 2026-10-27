@@ -1,0 +1,19 @@
+{
+  "name": "bugalter-sz",
+  "version": "2.0.0",
+  "description": "BugalterSZ: аукцион, бухгалтерия и заметки на данных EXBO API (Cloudflare Pages + D1)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-catalog.js",
+    "dev": "npm run build && wrangler pages dev public",
+    "db:local": "wrangler d1 execute bugalter-sz --local --file=schema.sql",
+    "db:remote": "wrangler d1 execute bugalter-sz --remote --file=schema.sql",
+    "deploy": "npm run build && wrangler pages deploy public --project-name bugalter-sz",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,4 @@
+# Локальные секреты для `npm run dev`. Скопируй в .dev.vars (файл не попадает в git).
+EXBO_CLIENT_ID=
+EXBO_CLIENT_SECRET=
+# DEMO=1
