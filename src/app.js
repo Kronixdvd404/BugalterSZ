@@ -209,6 +209,19 @@ route('DELETE', '/api/notes/:id', async ({ db, user, params }) => {
 
 /* ---------- аукцион ---------- */
 
+// Лента, выгодные лоты и статус одинаковы для всех пользователей, поэтому короткий кэш в памяти
+// сильно режет число чтений D1 (каждая открытая вкладка опрашивает эти адреса постоянно).
+const ttlCache = new Map();
+async function cached(key, ttlMs, make) {
+  const now = Date.now();
+  const hit = ttlCache.get(key);
+  if (hit && hit.exp > now) return hit.data;
+  const data = await make();
+  if (ttlCache.size > 200) ttlCache.clear();
+  ttlCache.set(key, { exp: now + ttlMs, data });
+  return data;
+}
+
 const regionParam = (config, v) => (config.regions.includes(String(v)) ? String(v) : 'all');
 const makeApi = (config, db) => (config.demo ? new DemoApi() : new ExboApi(config, db));
 
@@ -220,13 +233,20 @@ async function catalogOf(ctx) {
   }
 }
 
-route('GET', '/api/auction/status', async (ctx) => json(await getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) })));
+route('GET', '/api/auction/status', async (ctx) => json(await cached('status', 12000, async () => getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) }))));
 
-route('GET', '/api/auction/feed', async ({ db, config, query }) =>
-  json(await getFeed(db, { region: regionParam(config, query.region), after: Number(query.after) || 0, limit: intParam(query.limit, 40, 1, 100) }))
-);
+route('GET', '/api/auction/feed', async ({ db, config, query }) => {
+  const region = regionParam(config, query.region);
+  const after = Number(query.after) || 0;
+  const limit = intParam(query.limit, 40, 1, 100);
+  return json(await cached(`feed:${region}:${after}:${limit}`, 4000, () => getFeed(db, { region, after, limit })));
+});
 
-route('GET', '/api/auction/deals', async ({ db, config, query }) => json({ items: await getDeals(db, { region: regionParam(config, query.region), limit: intParam(query.limit, 6, 1, 12) }) }));
+route('GET', '/api/auction/deals', async ({ db, config, query }) => {
+  const region = regionParam(config, query.region);
+  const limit = intParam(query.limit, 6, 1, 12);
+  return json({ items: await cached(`deals:${region}:${limit}`, 15000, () => getDeals(db, { region, limit })) });
+});
 
 route('GET', '/api/auction/search', async (ctx) => json({ items: searchCatalog(await catalogOf(ctx), ctx.query.q, 12) }));
 
