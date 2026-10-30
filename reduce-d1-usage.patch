@@ -1,0 +1,100 @@
+diff --git a/src/app.js b/src/app.js
+index a646f4a..7247d0f 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -209,6 +209,19 @@ route('DELETE', '/api/notes/:id', async ({ db, user, params }) => {
+ 
+ /* ---------- аукцион ---------- */
+ 
++// Лента, выгодные лоты и статус одинаковы для всех пользователей, поэтому короткий кэш в памяти
++// сильно режет число чтений D1 (каждая открытая вкладка опрашивает эти адреса постоянно).
++const ttlCache = new Map();
++async function cached(key, ttlMs, make) {
++  const now = Date.now();
++  const hit = ttlCache.get(key);
++  if (hit && hit.exp > now) return hit.data;
++  const data = await make();
++  if (ttlCache.size > 200) ttlCache.clear();
++  ttlCache.set(key, { exp: now + ttlMs, data });
++  return data;
++}
++
+ const regionParam = (config, v) => (config.regions.includes(String(v)) ? String(v) : 'all');
+ const makeApi = (config, db) => (config.demo ? new DemoApi() : new ExboApi(config, db));
+ 
+@@ -220,13 +233,20 @@ async function catalogOf(ctx) {
+   }
+ }
+ 
+-route('GET', '/api/auction/status', async (ctx) => json(await getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) })));
++route('GET', '/api/auction/status', async (ctx) => json(await cached('status', 12000, async () => getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) }))));
+ 
+-route('GET', '/api/auction/feed', async ({ db, config, query }) =>
+-  json(await getFeed(db, { region: regionParam(config, query.region), after: Number(query.after) || 0, limit: intParam(query.limit, 40, 1, 100) }))
+-);
++route('GET', '/api/auction/feed', async ({ db, config, query }) => {
++  const region = regionParam(config, query.region);
++  const after = Number(query.after) || 0;
++  const limit = intParam(query.limit, 40, 1, 100);
++  return json(await cached(`feed:${region}:${after}:${limit}`, 4000, () => getFeed(db, { region, after, limit })));
++});
+ 
+-route('GET', '/api/auction/deals', async ({ db, config, query }) => json({ items: await getDeals(db, { region: regionParam(config, query.region), limit: intParam(query.limit, 6, 1, 12) }) }));
++route('GET', '/api/auction/deals', async ({ db, config, query }) => {
++  const region = regionParam(config, query.region);
++  const limit = intParam(query.limit, 6, 1, 12);
++  return json({ items: await cached(`deals:${region}:${limit}`, 15000, () => getDeals(db, { region, limit })) });
++});
+ 
+ route('GET', '/api/auction/search', async (ctx) => json({ items: searchCatalog(await catalogOf(ctx), ctx.query.q, 12) }));
+ 
+diff --git a/src/scanner.js b/src/scanner.js
+index 7d5b8c3..54c70ee 100644
+--- a/src/scanner.js
++++ b/src/scanner.js
+@@ -141,7 +141,7 @@ export async function tick({ db, api, config, catalog }) {
+   if (!N) return { skipped: true, empty: true };
+   const total = regions.length * N;
+ 
+-  const metaRows = (await db.prepare("SELECT k, v FROM meta WHERE k IN ('cursor', 'cycle_start')").all()).results || [];
++  const metaRows = (await db.prepare("SELECT k, v FROM meta WHERE k IN ('cursor', 'cycle_start', 'deals_gc', 'last_error')").all()).results || [];
+   const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
+   const cursor = (Number(meta.cursor) || 0) % total;
+ 
+@@ -152,8 +152,8 @@ export async function tick({ db, api, config, catalog }) {
+   const nCold = Math.max(1, sc.batch - plan.size);
+   for (let i = 0; i < nCold; i++) {
+     const idx = (cursor + i) % total;
+-    const region = regions[Math.floor(idx / N)];
+-    const id = items[idx % N].id;
++    const region = regions[idx % regions.length]; // регионы чередуются, чтобы EU не ждал полного круга по RU
++    const id = items[Math.floor(idx / regions.length) % N].id;
+     const k = region + ':' + id;
+     if (!plan.has(k)) plan.set(k, { k, region, id, prev: null, cold: true });
+   }
+@@ -265,18 +265,20 @@ export async function tick({ db, api, config, catalog }) {
+ 
+   // Дальше всё одной транзакцией.
+   if (feedInserts) stmts.push(db.prepare('DELETE FROM feed WHERE seq <= (SELECT MAX(seq) FROM feed) - ?1').bind(sc.feedSize));
+-  stmts.push(db.prepare('DELETE FROM deals WHERE end_time > 0 AND end_time < ?1').bind(Date.now()));
++  if (Date.now() - (Number(meta.deals_gc) || 0) > 60000) {
++    stmts.push(db.prepare('DELETE FROM deals WHERE end_time > 0 AND end_time < ?1').bind(Date.now()));
++    stmts.push(setMeta(db, 'deals_gc', Date.now()));
++  }
+   stmts.push(setMeta(db, 'cursor', newCursor));
+   if (wrapped) {
+     stmts.push(addMeta(db, 'cycle', 1));
+     stmts.push(setMeta(db, 'cycle_ms', started - (Number(meta.cycle_start) || started)));
+     stmts.push(setMeta(db, 'cycle_start', started));
+   } else if (!meta.cycle_start) stmts.push(setMeta(db, 'cycle_start', started));
+-  stmts.push(addMeta(db, 'scanned', stats.scanned));
++  if (stats.scanned) stmts.push(addMeta(db, 'scanned', stats.scanned));
+   if (stats.errors) stmts.push(addMeta(db, 'errors', stats.errors));
+-  if (stats.lastError) stmts.push(setMeta(db, 'last_error', stats.lastError));
+-  else if (retryAfter) stmts.push(setMeta(db, 'last_error', `Лимит API (429), пауза ${retryAfter} с`));
+-  else stmts.push(setMeta(db, 'last_error', ''));
++  const lastError = stats.lastError || (retryAfter ? `Лимит API (429), пауза ${retryAfter} с` : '');
++  if (lastError !== (meta.last_error || '')) stmts.push(setMeta(db, 'last_error', lastError));
+ 
+   // Следующий тик — не раньше, чем позволит лимит запросов.
+   const wait = retryAfter ? retryAfter * 1000 : Math.max(LEASE_FLOOR, Math.round((api.requests * 60000) / config.exbo.ratePerMin));

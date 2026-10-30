@@ -10,10 +10,18 @@
     "db:local": "wrangler d1 execute bugalter-sz --local --file=schema.sql",
     "db:remote": "wrangler d1 execute bugalter-sz --remote --file=schema.sql",
     "deploy": "npm run build && wrangler pages deploy public --project-name bugalter-sz",
-    "test": "node --test"
+    "test": "node --test",
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "backup": "node --disable-warning=ExperimentalWarning server/backup.js",
+    "db:turso": "node scripts/db-turso.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
+  }
 }

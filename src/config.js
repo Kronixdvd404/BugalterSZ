@@ -19,6 +19,7 @@ export function getConfig(env) {
     regions: regions.length ? regions : ['ru', 'eu'],
     pbkdf2Iter: Math.max(10000, Math.min(100000, num(env.PBKDF2_ITER, 100000))), // 100000 — максимум в Workers
     tickSecret: env.TICK_SECRET || '',
+    backgroundScan: flag(env.BACKGROUND_SCAN), // на своём сервере сканер крутится сам, вкладки его не дёргают
     exbo: {
       clientId: env.EXBO_CLIENT_ID || '',
       clientSecret: env.EXBO_CLIENT_SECRET || '',

@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 .dev.vars
 public/catalog.json
+.env
+data/

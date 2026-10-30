@@ -273,11 +273,20 @@ route(
     const secret = request.headers.get('x-tick-secret');
     const byCron = Boolean(config.tickSecret) && secret === config.tickSecret;
     if (!user && !byCron) throw bad('Нужно войти', 401);
+    if (config.backgroundScan) return json({ skipped: true, background: true }); // сканер работает на сервере сам
     const catalog = await catalogOf(ctx);
     return json(await tick({ db, api: makeApi(config, db), config, catalog }));
   },
   { auth: false }
 );
+
+/** Шаг сканера без HTTP-запроса: его вызывает фоновый цикл собственного сервера (server/index.js). */
+export async function backgroundTick(env) {
+  const config = getConfig(env);
+  const ctx = { env, request: new Request('http://localhost/'), config };
+  const catalog = await catalogOf(ctx);
+  return tick({ db: env.DB, api: makeApi(config, env.DB), config, catalog });
+}
 
 /* ---------- вход ---------- */
 

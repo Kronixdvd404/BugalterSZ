@@ -3,10 +3,10 @@ compatibility_date = "2025-01-01"
 pages_build_output_dir = "public"
 
 # База данных. database_id подставь после `npx wrangler d1 create bugalter-sz` (см. README).
-[[d1_databases]]
-binding = "DB"
-database_name = "bugalter-sz"
-database_id = "4265a7f2-7e40-4b4f-a4b6-8c05e8179c96"
+#[[d1_databases]]
+#binding = "DB"
+#database_name = "bugalter-sz"
+#database_id = "4265a7f2-7e40-4b4f-a4b6-8c05e8179c96"
 
 # Необязательные настройки. Секреты (EXBO_CLIENT_ID, EXBO_CLIENT_SECRET) сюда НЕ пиши,
 # их задают командой `wrangler pages secret put` или в панели Cloudflare.

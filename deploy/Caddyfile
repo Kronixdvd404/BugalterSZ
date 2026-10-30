@@ -1,0 +1,5 @@
+# Замени адрес на свой домен (например bugalter.duckdns.org). Caddy сам получит и будет продлевать https-сертификат.
+ВАШ-ДОМЕН.duckdns.org {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}
