@@ -1,3 +1,5 @@
+import { moduleName } from './modules.js';
+
 export class ApiError extends Error {
   constructor(msg, status, retryAfter = 0) {
     super(msg);
@@ -19,7 +21,9 @@ export function normalizeLot(l) {
     startTime: l.startTime ? Date.parse(l.startTime) || 0 : 0,
     endTime: l.endTime ? Date.parse(l.endTime) || 0 : 0,
     qlt: optNum(add.qlt), // качество: 0 обычный … 5 легендарный
-    ptn: optNum(add.ptn) // заточка: +0 … +15
+    ptn: optNum(add.ptn), // заточка: +0 … +15
+    mod: moduleName(add), // название оружейного модуля («Снайпер»); для других предметов сканер его сбрасывает
+    raw: add // сырые данные additional (нужны только для диагностики модулей, в базу не пишутся)
   };
 }
 
@@ -30,7 +34,8 @@ export function normalizeSale(p) {
     price: num(p.price),
     time: p.time ? Date.parse(p.time) || 0 : 0,
     qlt: optNum(add.qlt),
-    ptn: optNum(add.ptn)
+    ptn: optNum(add.ptn),
+    mod: moduleName(add)
   };
 }
 

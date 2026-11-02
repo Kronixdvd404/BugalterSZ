@@ -21,6 +21,27 @@ const intParam = (v, d, min, max) => Math.min(max, Math.max(min, Number(v) || d)
 
 /* ---------- бухгалтерия: хелперы ---------- */
 
+// Операции делятся на дни по времени UTC+3: в 00:00 по UTC+3 начинается новый день, а прошлый уходит в архив.
+const DAY_MS = 24 * 3600 * 1000;
+const TZ_OFFSET = 3 * 3600 * 1000;
+export const dayStartOf = (ts) => Math.floor((ts + TZ_OFFSET) / DAY_MS) * DAY_MS - TZ_OFFSET;
+
+async function dayTotals(db, user, from, to) {
+  const rows = (await db.prepare('SELECT type, COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM ledger WHERE uid = ?1 AND ts >= ?2 AND ts < ?3 GROUP BY type').bind(user.id, from, to).all()).results || [];
+  const out = { earned: 0, spent: 0, incomeCount: 0, expenseCount: 0 };
+  for (const r of rows) {
+    if (r.type === 'income') {
+      out.earned = r.s;
+      out.incomeCount = r.c;
+    } else {
+      out.spent = r.s;
+      out.expenseCount = r.c;
+    }
+  }
+  out.net = out.earned - out.spent;
+  return out;
+}
+
 async function totals(db, user) {
   const rows = (await db.prepare('SELECT type, COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM ledger WHERE uid = ?1 GROUP BY type').bind(user.id).all()).results || [];
   let income = 0;
@@ -35,6 +56,15 @@ async function totals(db, user) {
 }
 
 /* ---------- аккаунт ---------- */
+
+/** Запоминает время входа. Если таблицы ещё нет (схему не обновили), вход всё равно работает. */
+async function touchLogin(db, uid) {
+  try {
+    await db.prepare('INSERT INTO user_login (uid, last_login, prev_login) VALUES (?1, ?2, 0) ON CONFLICT(uid) DO UPDATE SET prev_login = last_login, last_login = ?2').bind(uid, Date.now()).run();
+  } catch (e) {
+    console.error('[login] не удалось сохранить время входа:', e && e.message);
+  }
+}
 
 route(
   'POST',
@@ -60,6 +90,7 @@ route(
       throw e;
     }
     const cookie = await startSession(db, user, secure);
+    await touchLogin(db, user.id);
     return json({ user: { nick } }, 201, { 'Set-Cookie': cookie });
   },
   { auth: false }
@@ -76,7 +107,9 @@ route(
     // Хеш считаем и для несуществующего ника, чтобы по времени ответа нельзя было угадать ники.
     const ok = user ? await verifyPassword(password, user.pass) : (await hashPassword(password, config.pbkdf2Iter), false);
     if (!user || !ok) throw bad('Неверный ник или пароль', 401);
-    return json({ user: { nick: user.nick } }, 200, { 'Set-Cookie': await startSession(db, user, secure) });
+    const cookie = await startSession(db, user, secure);
+    await touchLogin(db, user.id);
+    return json({ user: { nick: user.nick } }, 200, { 'Set-Cookie': cookie });
   },
   { auth: false }
 );
@@ -87,12 +120,105 @@ route('GET', '/api/auth/me', async ({ user }) => json({ user: user ? { nick: use
 
 route('GET', '/api/config', async ({ config }) => json({ regions: config.regions, demo: config.demo }), { auth: false });
 
+route('GET', '/api/account', async ({ db, user }) => {
+  const u = await db.prepare('SELECT created_at FROM users WHERE id = ?1').bind(user.id).first();
+  let login = null;
+  try {
+    login = await db.prepare('SELECT last_login, prev_login FROM user_login WHERE uid = ?1').bind(user.id).first();
+  } catch (_) {
+    /* таблица появится после обновления схемы (npm run db:turso) */
+  }
+  if (!login) {
+    // вошли до появления этой функции: считаем текущий сеанс последним входом
+    await touchLogin(db, user.id);
+    login = { last_login: Date.now(), prev_login: 0 };
+  }
+  return json({ nick: user.nick, createdAt: u ? u.created_at : null, lastLogin: login.last_login, prevLogin: login.prev_login || null });
+});
+
+/* ---------- личный чёрный список предметов ---------- */
+
+const HIDDEN_MAX = 500;
+const hiddenRows = async (db, user) => {
+  try {
+    return (await db.prepare('SELECT item_id FROM user_hidden WHERE uid = ?1 ORDER BY at DESC').bind(user.id).all()).results || [];
+  } catch (_) {
+    return []; // таблицы ещё нет
+  }
+};
+
+route('GET', '/api/hidden', async (ctx) => {
+  const catalog = await catalogOf(ctx);
+  const rows = await hiddenRows(ctx.db, ctx.user);
+  return json({
+    items: rows.map((r) => {
+      const it = catalog.byId.get(r.item_id);
+      return { id: r.item_id, name: it ? it.name : r.item_id, icon: it ? it.icon : '' };
+    })
+  });
+});
+
+route('PUT', '/api/hidden/:id', async (ctx) => {
+  const catalog = await catalogOf(ctx);
+  const it = catalog.byId.get(ctx.params.id);
+  if (!it) throw bad('Предмет не найден', 404);
+  const rows = await hiddenRows(ctx.db, ctx.user);
+  if (rows.length >= HIDDEN_MAX && !rows.some((r) => r.item_id === it.id)) throw bad('Слишком много скрытых предметов');
+  await ctx.db.prepare('INSERT INTO user_hidden (uid, item_id, at) VALUES (?1, ?2, ?3) ON CONFLICT(uid, item_id) DO UPDATE SET at = ?3').bind(ctx.user.id, it.id, Date.now()).run();
+  return json({ ok: true, id: it.id });
+});
+
+route('DELETE', '/api/hidden/:id', async ({ db, user, params }) => {
+  await db.prepare('DELETE FROM user_hidden WHERE uid = ?1 AND item_id = ?2').bind(user.id, params.id).run();
+  return json({ ok: true });
+});
+
 /* ---------- бухгалтерия ---------- */
 
+// Главная страница бухгалтера показывает операции только за текущий день (по UTC+3), баланс считается по всей истории.
 route('GET', '/api/ledger', async ({ db, user, query }) => {
   const limit = intParam(query.limit, 200, 1, 500);
-  const [t, rows] = await Promise.all([totals(db, user), db.prepare('SELECT id, type, amount, note, ts FROM ledger WHERE uid = ?1 ORDER BY ts DESC, rowid DESC LIMIT ?2').bind(user.id, limit).all()]);
-  return json({ start: user.ledger_start, ...t, entries: rows.results || [] });
+  const from = dayStartOf(Date.now());
+  const [t, rows, day] = await Promise.all([
+    totals(db, user),
+    db.prepare('SELECT id, type, amount, note, ts FROM ledger WHERE uid = ?1 AND ts >= ?2 ORDER BY ts DESC, rowid DESC LIMIT ?3').bind(user.id, from, limit).all(),
+    dayTotals(db, user, from, from + DAY_MS)
+  ]);
+  return json({ start: user.ledger_start, ...t, day: { from, to: from + DAY_MS, income: day.earned, expense: day.spent, count: day.incomeCount + day.expenseCount }, entries: rows.results || [] });
+});
+
+// Архив: прошлые дни с итогами. Сами операции дня подгружаются отдельно.
+route('GET', '/api/ledger/archive', async ({ db, user }) => {
+  const today = dayStartOf(Date.now());
+  const rows = (await db.prepare(`SELECT (ts + ${TZ_OFFSET}) / ${DAY_MS} AS d, type, COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM ledger WHERE uid = ?1 AND ts < ?2 GROUP BY d, type ORDER BY d ASC`).bind(user.id, today).all()).results || [];
+  const days = new Map();
+  for (const r of rows) {
+    const key = Number(r.d);
+    const d = days.get(key) || { day: key * DAY_MS - TZ_OFFSET, earned: 0, spent: 0, count: 0 };
+    if (r.type === 'income') d.earned = r.s;
+    else d.spent = r.s;
+    d.count += r.c;
+    days.set(key, d);
+  }
+  let balance = user.ledger_start;
+  const list = [...days.values()].map((d) => {
+    d.net = d.earned - d.spent;
+    balance += d.net;
+    d.balanceEnd = balance;
+    return d;
+  });
+  return json({ today, days: list.reverse().slice(0, 1000) });
+});
+
+route('GET', '/api/ledger/archive/:day', async ({ db, user, params }) => {
+  const day = Number(params.day);
+  if (!Number.isFinite(day)) throw bad('Неверная дата');
+  const from = dayStartOf(day);
+  const [rows, t] = await Promise.all([
+    db.prepare('SELECT id, type, amount, note, ts FROM ledger WHERE uid = ?1 AND ts >= ?2 AND ts < ?3 ORDER BY ts DESC, rowid DESC LIMIT 1000').bind(user.id, from, from + DAY_MS).all(),
+    dayTotals(db, user, from, from + DAY_MS)
+  ]);
+  return json({ day: from, ...t, entries: rows.results || [] });
 });
 
 route('PUT', '/api/ledger/start', async ({ db, user, body }) => {
@@ -117,15 +243,27 @@ route('POST', '/api/ledger/entries', async ({ db, user, body }) => {
 });
 
 route('DELETE', '/api/ledger/entries/:id', async ({ db, user, params }) => {
-  const r = await db.prepare('DELETE FROM ledger WHERE id = ?1 AND uid = ?2').bind(params.id, user.id).run();
+  const r = await db.prepare('DELETE FROM ledger WHERE id = ?1 AND uid = ?2 AND ts >= ?3').bind(params.id, user.id, dayStartOf(Date.now())).run();
+  if (!r.meta.changes) {
+    const old = await db.prepare('SELECT 1 FROM ledger WHERE id = ?1 AND uid = ?2').bind(params.id, user.id).first();
+    if (old) throw bad('Операции из архива удалить нельзя', 403);
+  }
   if (!r.meta.changes) throw bad('Операция не найдена', 404);
   return json(await totals(db, user));
 });
 
-// Итог за день. Границы дня присылает браузер (его часовой пояс), в миллисекундах.
+// Итог за день. Без параметров: текущий день по UTC+3; ?day=<мс> — день, в который попадает метка времени.
 route('GET', '/api/ledger/summary', async ({ db, user, query }) => {
-  const from = Number(query.from);
-  const to = Number(query.to);
+  let from;
+  let to;
+  if (query.from !== undefined || query.to !== undefined) {
+    from = Number(query.from);
+    to = Number(query.to);
+  } else {
+    // без параметров: текущий день по UTC+3 (или день, указанный параметром day)
+    from = dayStartOf(query.day !== undefined && Number.isFinite(Number(query.day)) ? Number(query.day) : Date.now());
+    to = from + DAY_MS;
+  }
   if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 48 * 3600 * 1000) throw bad('Неверный период');
   const [before, inside, topIn, topOut] = await db.batch([
     db.prepare("SELECT COALESCE(SUM(CASE type WHEN 'income' THEN amount ELSE -amount END), 0) AS s FROM ledger WHERE uid = ?1 AND ts < ?2").bind(user.id, from),
@@ -235,17 +373,31 @@ async function catalogOf(ctx) {
 
 route('GET', '/api/auction/status', async (ctx) => json(await cached('status', 12000, async () => getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) }))));
 
-route('GET', '/api/auction/feed', async ({ db, config, query }) => {
+route('GET', '/api/auction/feed', async (ctx) => {
+  const { db, config, query } = ctx;
   const region = regionParam(config, query.region);
   const after = Number(query.after) || 0;
   const limit = intParam(query.limit, 40, 1, 100);
-  return json(await cached(`feed:${region}:${after}:${limit}`, 4000, () => getFeed(db, { region, after, limit })));
+  const catalog = await catalogOf(ctx);
+  return json(await cached(`feed:${region}:${after}:${limit}`, 4000, () => getFeed(db, { region, after, limit, exclude: catalog.hidden })));
 });
 
-route('GET', '/api/auction/deals', async ({ db, config, query }) => {
+route('GET', '/api/auction/deals', async (ctx) => {
+  const { db, config, query } = ctx;
   const region = regionParam(config, query.region);
   const limit = intParam(query.limit, 6, 1, 12);
-  return json({ items: await cached(`deals:${region}:${limit}`, 15000, () => getDeals(db, { region, limit })) });
+  const catalog = await catalogOf(ctx);
+  return json({ items: await cached(`deals:${region}:${limit}`, 15000, () => getDeals(db, { region, limit, exclude: catalog.hidden })) });
+});
+
+// Сырые данные лотов оружейного модуля (сохраняются при первом сканировании): по ним видно, где в ответе EXBO лежит название модуля.
+route('GET', '/api/auction/module-samples', async ({ db }) => {
+  const row = await db.prepare("SELECT v FROM meta WHERE k = 'mod_samples'").first();
+  let samples = [];
+  try {
+    samples = row ? JSON.parse(row.v) : [];
+  } catch (_) {}
+  return json({ samples });
 });
 
 route('GET', '/api/auction/search', async (ctx) => json({ items: searchCatalog(await catalogOf(ctx), ctx.query.q, 12) }));

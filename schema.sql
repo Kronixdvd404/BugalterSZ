@@ -84,3 +84,18 @@ CREATE TABLE IF NOT EXISTS deals (
 );
 CREATE INDEX IF NOT EXISTS idx_deals_item ON deals (item_key);
 CREATE INDEX IF NOT EXISTS idx_deals_score ON deals (score);
+
+-- Время входов: для страницы аккаунта
+CREATE TABLE IF NOT EXISTS user_login (
+  uid        TEXT PRIMARY KEY,
+  last_login INTEGER NOT NULL,
+  prev_login INTEGER NOT NULL DEFAULT 0
+);
+
+-- Личный чёрный список: скрытые предметы не показываются в новых и выгодных лотах, но находятся поиском
+CREATE TABLE IF NOT EXISTS user_hidden (
+  uid     TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  at      INTEGER NOT NULL,
+  PRIMARY KEY (uid, item_id)
+);

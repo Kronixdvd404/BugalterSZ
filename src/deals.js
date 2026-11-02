@@ -4,6 +4,9 @@
  * Лот сравнивается только с продажами того же предмета, у которых совпадает КАЧЕСТВО (qlt: 0 обычный …
  * 5 легендарный) и ЗАТОЧКА (ptn: +0 … +15). Для сравнения берётся медиана цены за штуку.
  *
+ * У оружейных модулей сначала сравнивается НАЗВАНИЕ модуля («Снайпер», «Пробойник» …), и только потом качество:
+ * модули с разными названиями это фактически разные предметы с разной ценой.
+ *
  * Если точных продаж (то же качество и та же заточка) мало, окно расширяется только ВНИЗ по заточке:
  * +5 можно сравнить с +4 и +3, но не с +6. Продажи с меньшей заточкой стоят дешевле, поэтому
  * такая медиана может только занизить «справедливую» цену и не создаёт ложных выгодных лотов.
@@ -42,17 +45,17 @@ export function detectMode(rows, refLots, forced = 'auto') {
 
 /**
  * Строит опорные данные из истории продаж. Результат — простой JSON (хранится в базе).
- * pts: [время, цена за штуку, качество|null, заточка|null]
+ * pts: [время, цена за штуку, качество|null, заточка|null, название модуля|null]
  */
 export function buildBaseline(sales, refLots, { maxAgeMs, maxSales = 400, forcedMode = 'auto', now = Date.now() } = {}) {
   const rows = sales.filter((s) => s.price > 0 && (!s.time || !maxAgeMs || now - s.time < maxAgeMs)).slice(0, maxSales);
   const mode = detectMode(rows, refLots, forcedMode);
-  const pts = rows.map((s) => [s.time || 0, Math.round((mode === 'total' ? s.price / s.amount : s.price) * 100) / 100, isNum(s.qlt) ? Number(s.qlt) : null, isNum(s.ptn) ? Number(s.ptn) : null]);
+  const pts = rows.map((s) => [s.time || 0, Math.round((mode === 'total' ? s.price / s.amount : s.price) * 100) / 100, isNum(s.qlt) ? Number(s.qlt) : null, isNum(s.ptn) ? Number(s.ptn) : null, s.mod || null]);
   return { at: now, ok: pts.length > 0, mode, pts };
 }
 
-/** Ключ группы: качество и заточка. У предметов без качества (аптечки, патроны) группа одна. */
-const groupKey = (q, p) => (q === null ? 'n' : q + ':' + (p === null ? 0 : p));
+/** Ключ группы: название модуля (если есть), затем качество и заточка. У предметов без качества (аптечки, патроны) группа одна. */
+const groupKey = (q, p, m = null) => (m ? m + '|' : '') + (q === null ? 'n' : q + ':' + (p === null ? 0 : p));
 
 /**
  * Индекс по группам для быстрых сравнений. Строится один раз на предмет за сканирование.
@@ -62,9 +65,14 @@ export function makeIndex(base, opts) {
   const groups = new Map(); // "q:p" -> отсортированные цены
   const hasQuality = base.pts.some((p) => p[2] !== null);
   const hasPtn = base.pts.some((p) => p[3] !== null); // если API не отдаёт заточку в истории, заточенные лоты не оцениваем
-  for (const [, unit, q, p] of base.pts) {
-    const k = groupKey(q, p);
-    if (!groups.has(k)) groups.set(k, []);
+  const hasMod = base.pts.some((p) => p[4]); // в истории есть названия модулей
+  const meta = new Map(); // ключ группы -> [модуль, качество, заточка] для сводки
+  for (const [, unit, q, p, m] of base.pts) {
+    const k = groupKey(q, p, m || null);
+    if (!groups.has(k)) {
+      groups.set(k, []);
+      meta.set(k, [m || null, q, p === null ? (q === null ? null : 0) : p]);
+    }
     groups.get(k).push(unit);
   }
   for (const arr of groups.values()) arr.sort(asc);
@@ -78,41 +86,42 @@ export function makeIndex(base, opts) {
   function ref(lot) {
     const q = isNum(lot.qlt) ? Number(lot.qlt) : null;
     const p = isNum(lot.ptn) ? Number(lot.ptn) : null;
+    const m = lot.mod || null;
+    // Модуль без названия или история без названий: честно сравнить не с чем (модули стоят по-разному).
+    if (hasMod && !m) return null;
+    if (m && !hasMod) return null;
     // У предмета качество есть в продажах, а у лота нет (или наоборот): сравнение было бы нечестным.
     if (hasQuality && q === null) return null;
     if (hasQuality && !hasPtn && p !== null && p > 0) return null;
-    const ck = groupKey(q, p);
+    const ck = groupKey(q, p, m);
     if (cache.has(ck)) return cache.get(ck);
 
     let out = null;
     const exact = groups.get(ck) || [];
-    if (exact.length >= opts.minSamples) out = stat(exact, { qlt: q, ptn: q === null ? null : p === null ? 0 : p, exact: true });
+    if (exact.length >= opts.minSamples) out = stat(exact, { mod: m, qlt: q, ptn: q === null ? null : p === null ? 0 : p, exact: true });
     else if (q !== null) {
       const pl = p === null ? 0 : p;
       for (let w = 1; w <= opts.ptnWindow && pl - w >= 0 && !out; w++) {
         let merged = [];
-        for (let x = pl - w; x <= pl; x++) merged = merged.concat(groups.get(groupKey(q, x)) || []);
-        if (merged.length >= opts.minSamples) out = stat(merged.sort(asc), { qlt: q, ptn: pl, ptnFrom: pl - w, exact: false });
+        for (let x = pl - w; x <= pl; x++) merged = merged.concat(groups.get(groupKey(q, x, m)) || []);
+        if (merged.length >= opts.minSamples) out = stat(merged.sort(asc), { mod: m, qlt: q, ptn: pl, ptnFrom: pl - w, exact: false });
       }
     }
     cache.set(ck, out);
     return out;
   }
 
-  /** Сводка по группам для страницы предмета: [[q, p, медиана, продаж]]. */
+  /** Сводка по группам для страницы предмета: [[q, p, медиана, продаж, модуль]]. Порядок: модуль, качество, заточка. */
   function summary() {
     const out = [];
     for (const [k, arr] of groups) {
-      if (k === 'n') out.push([null, null, Math.round(median(arr)), arr.length]);
-      else {
-        const [q, p] = k.split(':').map(Number);
-        out.push([q, p, Math.round(median(arr)), arr.length]);
-      }
+      const [m, q, p] = meta.get(k);
+      out.push([q, p, Math.round(median(arr)), arr.length, m]);
     }
-    return out.sort((a, b) => (a[0] ?? -1) - (b[0] ?? -1) || (a[1] ?? 0) - (b[1] ?? 0));
+    return out.sort((a, b) => String(a[4] || '').localeCompare(String(b[4] || ''), 'ru') || (a[0] ?? -1) - (b[0] ?? -1) || (a[1] ?? 0) - (b[1] ?? 0));
   }
 
-  return { ref, summary, hasQuality };
+  return { ref, summary, hasQuality, hasMod };
 }
 
 /** Сравнивает цену лота за штуку с опорной ценой. null — если сравнивать не с чем. */

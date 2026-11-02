@@ -107,8 +107,8 @@ test('сканер: тики наполняют ленту и выгодные �
   // сразу повторный тик отсекается блокировкой (лимит запросов)
   assert.equal((await call('POST', '/api/auction/tick')).data.skipped, true);
 
-  // прогоняем несколько тиков, сбрасывая блокировку
-  for (let i = 0; i < 6; i++) {
+  // прогоняем тиков столько, чтобы обойти весь демо-каталог (выгодные артефакты зависят от времени, одного круга хватает)
+  for (let i = 0; i < 24; i++) {
     await env.DB.prepare("UPDATE meta SET v = '0' WHERE k = 'lease'").run();
     const t = await call('POST', '/api/auction/tick');
     assert.ok(t.data.ok, JSON.stringify(t.data));
@@ -144,7 +144,7 @@ test('страница предмета: медианы по качеству и
   assert.ok(d.data.groups.length > 5);
   const [q, p, med] = d.data.groups.find((g) => g[0] === 5 && g[1] === 0) || d.data.groups[0];
   assert.ok(med > 0 && q !== null && p !== null);
-  assert.ok(d.data.history.length > 10 && d.data.history[0].length === 4);
+  assert.ok(d.data.history.length > 10 && d.data.history[0].length === 5);
   // легендарная +0 заведомо дороже обычной +0
   const m = (qq, pp) => (d.data.groups.find((g) => g[0] === qq && g[1] === pp) || [])[2];
   if (m(0, 0) && m(5, 0)) assert.ok(m(5, 0) > m(0, 0) * 4);

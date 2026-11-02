@@ -7,7 +7,7 @@
  */
 
 export const CATALOG = [
-  // [id, название, базовая цена, артефакт?]
+  // [id, название, базовая цена, артефакт?, категория]
   ['d_medkit', 'Аптечка армейская', 3200, 0],
   ['d_bandage', 'Бинт', 450, 0],
   ['d_stim', 'Боевой стимулятор', 7800, 0],
@@ -35,11 +35,11 @@ export const CATALOG = [
   ['d_detector', 'Детектор «Медведь»', 96000, 0],
   ['d_scanner', 'Сканер аномалий', 54000, 0],
   ['d_battery', 'Батарея', 1900, 0],
-  ['d_scrap', 'Металлолом', 600, 0],
+  ['d_scrap', 'Металлолом', 600, 0, 'misc'],
   ['d_circuit', 'Микросхема', 5200, 0],
   ['d_chem', 'Химические реагенты', 3700, 0],
-  ['d_food', 'Консервы «Завтрак туриста»', 700, 0],
-  ['d_vodka', 'Водка «Казаки»', 1500, 0],
+  ['d_food', 'Консервы «Завтрак туриста»', 700, 0, 'supply/food'],
+  ['d_vodka', 'Водка «Казаки»', 1500, 0, 'supply/drink'],
   ['d_energy', 'Энергетик', 1100, 0],
   ['d_optic', 'Прицел ПСО-1', 38000, 0],
   ['d_silencer', 'Глушитель ПБС', 27000, 0],
@@ -47,7 +47,7 @@ export const CATALOG = [
   ['d_backpack', 'Рюкзак «Тактик»', 64000, 0],
   ['d_knife', 'Нож «Финка»', 8800, 0],
   ['d_gold', 'Золотая подвеска', 15000, 0],
-  ['d_poster', 'Раритетный плакат', 23000, 0],
+  ['d_poster', 'Раритетный плакат', 23000, 0, 'other'],
   ['d_art_soul', 'Душа', 210000, 1],
   ['d_art_flash', 'Вспышка', 150000, 1],
   ['d_art_moon', 'Лунный свет', 180000, 1],
@@ -57,8 +57,12 @@ export const CATALOG = [
   ['d_art_pellicle', 'Пленка', 76000, 1],
   ['d_art_urchin', 'Морской ёж', 135000, 1],
   ['d_art_jelly', 'Мамины бусы', 460000, 1],
-  ['d_art_bat', 'Ночная звезда', 340000, 1]
+  ['d_art_bat', 'Ночная звезда', 340000, 1],
+  ['d_wpn_module', 'Оружейный модуль', 60000, 2, 'weapon_modules/weapon_module']
 ];
+
+// Демо-модули: название в кавычках и коэффициент цены (у каждого модуля своя цена)
+const MODULES = [['Снайпер', 2.2], ['Пробойник', 1.4], ['Слайдер', 0.8], ['Ураган', 3.1], ['Рикошет', 1.0]];
 
 const QLT_MULT = [1, 1.35, 1.9, 2.8, 4.5, 8]; // Обычный → Легендарный
 const QLT_POOL = [0, 0, 1, 1, 2, 2, 3, 4, 5];
@@ -92,7 +96,7 @@ export class DemoApi {
   }
 
   async listing() {
-    return CATALOG.map(([id, name]) => ({ id, name, icon: '', color: '' }));
+    return CATALOG.map(([id, name, , , category]) => ({ id, name, icon: '', color: '', category: category || '' }));
   }
 
   _spec(id) {
@@ -105,15 +109,16 @@ export class DemoApi {
     const regionMult = region === 'eu' ? 1.08 : 1;
     const startTime = n * period + Math.floor(r() * period * 0.9);
     const qlt = art ? pick(r, QLT_POOL) : null;
-    const ptn = art ? pick(r, PTN_POOL) : null;
-    const unit = base * regionMult * (art ? QLT_MULT[qlt] * ptnMult(ptn) : 1);
+    const ptn = art === 1 ? pick(r, PTN_POOL) : art === 2 ? 0 : null; // art 2 — модуль: есть качество, заточки нет
+    const mod = art === 2 ? pick(r, MODULES) : null;
+    const unit = base * regionMult * (art ? QLT_MULT[qlt] * ptnMult(ptn) : 1) * (mod ? mod[1] : 1);
     const stack = base < 100 ? pick(r, [20, 60, 120, 300]) : r() < 0.12 ? 1 + Math.floor(r() * 5) : 1;
     let k = Math.exp(gauss(r) * 0.08);
     if (r() < 0.1) k = 0.5 + r() * 0.25; // выгодный лот
     const buyout = round(unit * k) * stack;
     const start = round(buyout * (0.55 + r() * 0.25));
     const endTime = startTime + pick(r, [2, 4, 8, 12]) * HOUR;
-    return { amount: stack, startPrice: start, currentPrice: start, buyoutPrice: buyout, startTime, endTime, qlt, ptn };
+    return { amount: stack, startPrice: start, currentPrice: start, buyoutPrice: buyout, startTime, endTime, qlt, ptn, mod: mod ? mod[0] : null };
   }
 
   _activeLots(region, id) {
@@ -152,10 +157,11 @@ export class DemoApi {
     for (let i = 0; i < 400; i++) {
       drift = Math.max(0.85, Math.min(1.15, drift + gauss(r) * 0.01));
       const qlt = art ? pick(r, QLT_POOL) : null;
-      const ptn = art ? pick(r, PTN_POOL) : null;
-      const unit = base * regionMult * drift * (art ? QLT_MULT[qlt] * ptnMult(ptn) : 1) * Math.exp(gauss(r) * 0.07);
+      const ptn = art === 1 ? pick(r, PTN_POOL) : art === 2 ? 0 : null;
+      const mod = art === 2 ? pick(r, MODULES) : null;
+      const unit = base * regionMult * drift * (art ? QLT_MULT[qlt] * ptnMult(ptn) : 1) * (mod ? mod[1] : 1) * Math.exp(gauss(r) * 0.07);
       const stack = base < 100 ? pick(r, [20, 60, 120, 300]) : r() < 0.12 ? 1 + Math.floor(r() * 5) : 1;
-      sales.push({ amount: stack, price: round(unit) * stack, time: Math.round(t), qlt, ptn });
+      sales.push({ amount: stack, price: round(unit) * stack, time: Math.round(t), qlt, ptn, mod: mod ? mod[0] : null });
       t -= (0.15 + r() * 0.9) * HOUR;
     }
     return { total: sales.length, sales: sales.slice(offset, offset + limit) };

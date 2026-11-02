@@ -1,3 +1,5 @@
+import { makeBlacklist } from './blacklist.js';
+
 const num = (v, d) => {
   const n = Number(v);
   return v !== undefined && v !== null && v !== '' && Number.isFinite(n) ? n : d;
@@ -19,6 +21,8 @@ export function getConfig(env) {
     regions: regions.length ? regions : ['ru', 'eu'],
     pbkdf2Iter: Math.max(10000, Math.min(100000, num(env.PBKDF2_ITER, 100000))), // 100000 — максимум в Workers
     tickSecret: env.TICK_SECRET || '',
+    blacklist: makeBlacklist(env), // предметы, скрытые из ленты (src/blacklist.js)
+    moduleItems: String(env.MODULE_ITEMS || '').split(',').map((s) => s.trim()).filter(Boolean), // id предметов с названиями модулей, помимо категории weapon_modules
     backgroundScan: flag(env.BACKGROUND_SCAN), // на своём сервере сканер крутится сам, вкладки его не дёргают
     exbo: {
       clientId: env.EXBO_CLIENT_ID || '',

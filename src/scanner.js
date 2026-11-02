@@ -9,6 +9,7 @@
  * и держит общий темп запросов к EXBO в пределах RATE_LIMIT_PER_MIN.
  */
 import { buildBaseline, makeIndex, evaluate, isDeal, median, quantile } from './deals.js';
+import { isModuleItem } from './modules.js';
 
 const BASELINE_TTL = 45 * 60 * 1000;
 const BASELINE_FAIL_TTL = 5 * 60 * 1000;
@@ -21,9 +22,12 @@ const LEASE_FLOOR = 1200;
 
 let catalogMem = { key: '', data: null };
 
-function makeCatalog(items) {
+function makeCatalog(items, isHidden = () => false) {
+  const hiddenIds = new Set(items.filter(isHidden).map((i) => i.id));
   return {
-    items,
+    items, // весь каталог: по нему работает поиск
+    scanItems: items.filter((i) => !hiddenIds.has(i.id)), // без чёрного списка: их сканирует сканер
+    hidden: (id) => hiddenIds.has(id),
     byId: new Map(items.map((i) => [i.id, i])),
     index: items.map((i) => ({ item: i, low: i.name.toLowerCase().replace(/ё/g, 'е') }))
   };
@@ -40,9 +44,9 @@ export async function loadCatalog({ env, request, config, demoApi }) {
     if (!res.ok) throw new Error('Не найден catalog.json: выполните `npm run build` и задеплойте заново');
     const raw = await res.json();
     const base = config.exbo.iconBase;
-    items = raw.map(([id, name, icon, color]) => ({ id, name, icon: icon ? base + icon : '', color: color || '' }));
+    items = raw.map(([id, name, icon, color, category]) => ({ id, name, icon: icon ? base + icon : '', color: color || '', category: category || '' }));
   }
-  catalogMem = { key, data: makeCatalog(items) };
+  catalogMem = { key, data: makeCatalog(items, config.blacklist) };
   return catalogMem.data;
 }
 
@@ -62,7 +66,7 @@ export function searchCatalog(catalog, q, limit = 12) {
 
 /* ---------------- вспомогательное ---------------- */
 
-const lotKey = (l) => [l.startTime, l.buyoutPrice || l.currentPrice, l.amount, l.qlt, l.ptn].join('|');
+const lotKey = (l) => [l.startTime, l.buyoutPrice || l.currentPrice, l.amount, l.qlt, l.ptn, l.mod || ''].join('|');
 const indexOpts = (sc) => ({ minSamples: sc.dealMinSamples, ptnWindow: sc.ptnWindow });
 
 function entryOf(catalog, region, id, l, key, deal, now) {
@@ -82,6 +86,7 @@ function entryOf(catalog, region, id, l, key, deal, now) {
     endTime: l.endTime,
     qlt: l.qlt,
     ptn: l.ptn,
+    mod: l.mod || null,
     seenAt: now,
     deal: deal ? { median: Math.round(deal.median), discount: deal.discount, savings: Math.round(deal.savings), samples: deal.samples, basis: deal.basis } : null
   };
@@ -91,7 +96,7 @@ const setMeta = (db, k, v) => db.prepare('INSERT INTO meta (k, v) VALUES (?1, ?2
 const addMeta = (db, k, n) => db.prepare('INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = CAST(v AS INTEGER) + ?2').bind(k, n);
 
 /** История продаж: до historyPages страниц по 200. Вторая страница нужна предметам с качеством и заточкой. */
-async function fetchBaseline(api, sc, region, id, refLots, budget, now) {
+async function fetchBaseline(api, sc, region, id, refLots, budget, now, moduleItem = false) {
   let sales = [];
   for (let page = 0; page < sc.historyPages; page++) {
     if (page > 0) {
@@ -105,6 +110,7 @@ async function fetchBaseline(api, sc, region, id, refLots, budget, now) {
     sales = sales.concat(h.sales);
     if (h.sales.length < 200) break;
   }
+  if (!moduleItem) for (const s of sales) s.mod = null; // названия модулей учитываются только у оружейных модулей
   return buildBaseline(sales, refLots, { maxAgeMs: SALES_MAX_AGE, forcedMode: sc.historyPrice, now });
 }
 
@@ -135,20 +141,27 @@ export async function tick({ db, api, config, catalog }) {
     .run();
   if (!lease.meta || lease.meta.changes === 0) return { skipped: true };
 
-  const items = catalog.items;
+  const items = catalog.scanItems; // чёрный список не сканируем
   const regions = config.regions;
   const N = items.length;
   if (!N) return { skipped: true, empty: true };
   const total = regions.length * N;
 
-  const metaRows = (await db.prepare("SELECT k, v FROM meta WHERE k IN ('cursor', 'cycle_start', 'deals_gc', 'last_error')").all()).results || [];
+  const metaRows = (await db.prepare("SELECT k, v FROM meta WHERE k IN ('cursor', 'cycle_start', 'deals_gc', 'last_error', 'mod_samples')").all()).results || [];
   const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
   const cursor = (Number(meta.cursor) || 0) % total;
 
   // План: сначала «горячие» предметы (у них есть лоты), остальное добирает обход каталога по кругу.
   const plan = new Map();
   const hotRows = (await db.prepare('SELECT k, region, item_id, seen FROM scan_state WHERE hot = 1 AND last_scan < ?1 ORDER BY last_scan ASC LIMIT ?2').bind(started - HOT_MIN_AGE, Math.floor(sc.batch / 2)).all()).results || [];
-  for (const r of hotRows) plan.set(r.k, { k: r.k, region: r.region, id: r.item_id, prev: { seen: new Set(JSON.parse(r.seen || '[]')) } });
+  const stmts = [];
+  for (const r of hotRows) {
+    if (catalog.hidden(r.item_id)) {
+      stmts.push(db.prepare('UPDATE scan_state SET hot = 0 WHERE k = ?1').bind(r.k)); // предмет теперь в чёрном списке
+      continue;
+    }
+    plan.set(r.k, { k: r.k, region: r.region, id: r.item_id, prev: { seen: new Set(JSON.parse(r.seen || '[]')) } });
+  }
   const nCold = Math.max(1, sc.batch - plan.size);
   for (let i = 0; i < nCold; i++) {
     const idx = (cursor + i) % total;
@@ -173,8 +186,8 @@ export async function tick({ db, api, config, catalog }) {
   }
   const baselines = new Map((baseRes.results || []).map((r) => [r.k, r]));
 
-  const stmts = [];
   const budget = { history: sc.historyBudget };
+  let sampleTaken = false;
   const stats = { scanned: 0, errors: 0, lastError: '', fresh: 0, deals: 0, rateLimit: 0 };
   let feedInserts = 0;
 
@@ -193,6 +206,16 @@ export async function tick({ db, api, config, catalog }) {
     }
     stats.scanned++;
     const lots = res.lots;
+    const moduleItem = isModuleItem(catalog.byId.get(id), config.moduleItems);
+    if (moduleItem && !meta.mod_samples && !sampleTaken && lots.length) {
+      // Один раз сохраняем сырые данные лотов модуля: по ним видно, где лежит название модуля (/api/auction/module-samples).
+      sampleTaken = true;
+      stmts.push(setMeta(db, 'mod_samples', JSON.stringify(lots.slice(0, 3).map((l) => l.raw || null))));
+    }
+    for (const l of lots) {
+      if (!moduleItem) l.mod = null;
+      delete l.raw;
+    }
     const keyed = lots.map((l) => ({ l, lk: lotKey(l) }));
 
     // Опорные цены по истории продаж. Нужны только если есть лоты с выкупом.
@@ -203,7 +226,7 @@ export async function tick({ db, api, config, catalog }) {
       const age = base ? now - base.at : Infinity;
       if (!(base && age < (base.ok ? BASELINE_TTL : BASELINE_FAIL_TTL)) && budget.history > 0) {
         try {
-          base = await fetchBaseline(api, sc, region, id, lots, budget, now);
+          base = await fetchBaseline(api, sc, region, id, lots, budget, now, moduleItem);
           stmts.push(baselineStmt(db, k, base));
         } catch (e) {
           if (e.status === 429) throw e;
@@ -296,20 +319,20 @@ function stateStmt(db, k, region, id, hot, now, seenKeys) {
 
 /* ---------------- то, что отдаём в API ---------------- */
 
-export async function getFeed(db, { region = 'all', after = 0, limit = 40 }) {
+export async function getFeed(db, { region = 'all', after = 0, limit = 40, exclude = () => false }) {
   const byRegion = region !== 'all';
-  const sql = `SELECT seq, data FROM feed WHERE seq > ?1 ${byRegion ? 'AND region = ?3' : ''} ORDER BY seq DESC LIMIT ?2`;
+  const sql = `SELECT seq, item_id, data FROM feed WHERE seq > ?1 ${byRegion ? 'AND region = ?3' : ''} ORDER BY seq DESC LIMIT ?2`;
   const st = db.prepare(sql);
   const [rows, top] = await db.batch([byRegion ? st.bind(after, limit, region) : st.bind(after, limit), db.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM feed')]);
-  return { seq: (top.results[0] || {}).m || 0, items: (rows.results || []).map((r) => ({ ...JSON.parse(r.data), seq: r.seq })) };
+  return { seq: (top.results[0] || {}).m || 0, items: (rows.results || []).filter((r) => !exclude(r.item_id)).map((r) => ({ ...JSON.parse(r.data), seq: r.seq })) };
 }
 
-export async function getDeals(db, { region = 'all', limit = 6 }) {
+export async function getDeals(db, { region = 'all', limit = 6, exclude = () => false }) {
   const byRegion = region !== 'all';
   const sql = `SELECT data FROM deals WHERE (end_time = 0 OR end_time > ?1) ${byRegion ? 'AND region = ?2' : ''} ORDER BY score DESC LIMIT 80`;
   const st = db.prepare(sql);
   const rows = (await (byRegion ? st.bind(Date.now(), region) : st.bind(Date.now())).all()).results || [];
-  const list = rows.map((r) => JSON.parse(r.data));
+  const list = rows.map((r) => JSON.parse(r.data)).filter((e) => !exclude(e.itemId));
   const perItem = new Map();
   const out = [];
   for (const e of list) {
@@ -329,12 +352,13 @@ export async function getStatus(db, { config, catalog }) {
     db.prepare('SELECT COUNT(*) AS n FROM deals WHERE end_time = 0 OR end_time > ?1').bind(Date.now())
   ]);
   const meta = Object.fromEntries((m.results || []).map((r) => [r.k, r.v]));
-  const total = config.regions.length * catalog.items.length;
+  const total = config.regions.length * catalog.scanItems.length;
   return {
     mode: config.demo ? 'demo' : 'live',
     demoReason: config.demoReason,
     regions: config.regions,
-    items: catalog.items.length,
+    items: catalog.scanItems.length,
+    hiddenItems: catalog.items.length - catalog.scanItems.length,
     cycle: Number(meta.cycle) || 0,
     progress: total ? Math.min(1, (Number(meta.cursor) || 0) / total) : 0,
     lastCycleSec: Math.round((Number(meta.cycle_ms) || 0) / 1000),
@@ -353,12 +377,13 @@ export async function itemDetail({ db, api, config, catalog, region, id }) {
   const sc = config.scanner;
   const k = region + ':' + id;
   const now = Date.now();
+  const moduleItem = isModuleItem(item, config.moduleItems);
 
   const [lotsRes, row] = await Promise.all([api.lots(region, id, { limit: 200, sort: 'buyout_price', order: 'asc' }), db.prepare('SELECT at, ok, data FROM baselines WHERE k = ?1').bind(k).first()]);
   let base = row ? parseBaseline(row) : null;
   if (!(base && base.ok && now - base.at < BASELINE_TTL)) {
     try {
-      base = await fetchBaseline(api, sc, region, id, lotsRes.lots, { history: 3 }, now);
+      base = await fetchBaseline(api, sc, region, id, lotsRes.lots, { history: 3 }, now, moduleItem);
       await baselineStmt(db, k, base).run();
     } catch (e) {
       if (e.status === 429) throw e;
@@ -368,6 +393,10 @@ export async function itemDetail({ db, api, config, catalog, region, id }) {
   const index = base && base.ok ? makeIndex(base, indexOpts(sc)) : null;
 
   // Лоты без выкупа (только ставка) сортировка может отдать первыми — переносим в конец.
+  for (const l of lotsRes.lots) {
+    if (!moduleItem) l.mod = null;
+    delete l.raw;
+  }
   const lots = lotsRes.lots.slice().sort((a, b) => (a.buyoutPrice || Infinity) / a.amount - (b.buyoutPrice || Infinity) / b.amount);
   const entries = lots.map((l) => {
     const d = evaluate(index, l);
@@ -386,7 +415,7 @@ export async function itemDetail({ db, api, config, catalog, region, id }) {
       .filter((p) => p[0])
       .sort((a, b) => a[0] - b[0])
       .slice(-150)
-      .map((p) => [p[0], Math.round(p[1]), p[2], p[3]]);
+      .map((p) => [p[0], Math.round(p[1]), p[2], p[3], p[4] || null]);
   }
   return {
     item: { id, name: item.name, icon: item.icon },
@@ -395,6 +424,8 @@ export async function itemDetail({ db, api, config, catalog, region, id }) {
     lots: entries,
     stats,
     hasQuality: Boolean(index && index.hasQuality),
+    isModule: moduleItem,
+    mods: [...new Set([...(index ? index.summary().map((g) => g[4]) : []), ...entries.map((e) => e.mod)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')),
     groups: index ? index.summary() : [],
     history
   };

@@ -1,7 +1,7 @@
 /*
  * Собирает public/catalog.json — компактный каталог предметов из публичной базы EXBO
  * (https://github.com/EXBO-Studio/stalcraft-database). Запускается при сборке: `npm run build`.
- * Формат: [[id, название, путь к иконке, цвет], ...]
+ * Формат: [[id, название, путь к иконке, цвет, категория], ...]
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,7 +22,8 @@ try {
     const lines = (e.name && e.name.lines) || {};
     // в listing.json путь к иконке бывает с префиксом реалма (/ru/..., /global/...), он уже есть в base
     const icon = e.icon ? String(e.icon).replace(/^\/(?:ru|global)\//, '/') : '';
-    items.push([id, lines.ru || lines.en || id, icon, e.color || '']);
+    const category = path.posix.dirname(String(e.data || '').replace(/^\/?items\//, ''));
+    items.push([id, lines.ru || lines.en || id, icon, e.color || '', category === '.' ? '' : category]);
   }
   if (!items.length) throw new Error('каталог пуст');
   fs.writeFileSync(out, JSON.stringify(items));

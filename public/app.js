@@ -38,7 +38,14 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     logout: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
-    bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>'
+    bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+    donate: '<circle cx="12" cy="12" r="9"/><path d="M14.6 9.3c-.4-1-1.4-1.6-2.6-1.6-1.5 0-2.6.8-2.6 2s1 1.7 2.6 2.1 2.6.9 2.6 2.1-1.1 2-2.6 2c-1.2 0-2.2-.6-2.7-1.7M12 6v1.7M12 16.3V18"/>',
+    support: '<circle cx="12" cy="12" r="6.2"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/><path d="M10 14.4l3.6-3.6"/><circle cx="14.4" cy="9.6" r="1.5"/>',
+    user: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.9-3.6 3.8-5.5 7.5-5.5s6.6 1.9 7.5 5.5"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    eye: '<path d="M2.5 12C3.5 10.2 7 6 12 6s8.5 4.2 9.5 6c-1 1.8-4.5 6-9.5 6s-8.5-4.2-9.5-6z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4.2 9.5 6-.4.7-1.2 1.8-2.4 2.9M6.6 7.7C4.7 9.100 3.300 10.900 2.500 12c1 1.800 4.500 6 9.500 6 1.400 0 2.700-.3 3.800-.9M9.900 10a3 3 0 0 0 4.100 4.100"/>',
+    lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'
   };
   function icon(name, cls) {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -81,6 +88,22 @@
     const d = new Date(ts);
     return pad(d.getHours()) + ':' + pad(d.getMinutes());
   };
+
+  // Дни бухгалтерии считаются по UTC+3 (в 00:00 по UTC+3 день закрывается и уходит в архив).
+  const TZ3 = 3 * 3600 * 1000;
+  const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  function fmtDay(ts) {
+    const d = new Date(ts + TZ3);
+    const year = d.getUTCFullYear() !== new Date(Date.now() + TZ3).getUTCFullYear() ? ' ' + d.getUTCFullYear() : '';
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + year + ', ' + WEEKDAYS[d.getUTCDay()];
+  }
+  function fmtDateTime(ts) {
+    const d = new Date(ts);
+    return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(ts);
+  }
+
+  // Ссылки для значков в шапке. Пока пусто: по нажатию показывается подсказка «скоро».
+  const LINKS = { donate: '', support: '' };
 
   const QLT = [
     ['Обычный', 'var(--q0)'],
@@ -156,7 +179,18 @@
 
   /* ===================== состояние и роутинг ===================== */
 
-  const state = { user: null, regions: ['ru', 'eu'], demo: false, region: 'all' };
+  const state = { user: null, regions: ['ru', 'eu'], demo: false, region: 'all', hidden: new Set() };
+
+  /** Личный чёрный список: предметы, скрытые из ленты и выгодных лотов (поиск их по-прежнему находит). */
+  async function loadHidden() {
+    try {
+      const r = await api('/hidden');
+      state.hidden = new Set(r.items.map((i) => i.id));
+      return r.items;
+    } catch (_) {
+      return [];
+    }
+  }
   let cleanups = [];
   const onLeave = (fn) => cleanups.push(fn);
   const interval = (fn, ms) => onLeave(((id) => () => clearInterval(id))(setInterval(fn, ms)));
@@ -178,8 +212,34 @@
 
   function parseHash() {
     const m = location.hash.replace(/^#\/?/, '').split('/');
-    const tab = TABS.some((t) => t[0] === m[0]) ? m[0] : 'auction';
+    const tab = TABS.some((t) => t[0] === m[0]) ? m[0] : m[0] === 'account' ? 'account' : 'auction';
     return { tab, id: m[1] || '' };
+  }
+
+  /** Значок в шапке: открывает ссылку из LINKS или, пока её нет, показывает короткую подсказку. */
+  function headerIcon(name, label, linkKey) {
+    let tip = null;
+    const btn = h(
+      'button',
+      {
+        class: 'top-icon',
+        type: 'button',
+        title: label,
+        'aria-label': label,
+        onclick: () => {
+          if (LINKS[linkKey]) return window.open(LINKS[linkKey], '_blank', 'noopener');
+          if (tip) return;
+          tip = h('div', { class: 'pop', role: 'status' }, label + ': ссылка появится позже');
+          btn.parentNode.append(tip);
+          setTimeout(() => {
+            tip.remove();
+            tip = null;
+          }, 2600);
+        }
+      },
+      icon(name)
+    );
+    return btn;
   }
 
   let shell = null;
@@ -204,12 +264,12 @@
           h(
             'div',
             { class: 'topbar-in' },
-            h('div', { class: 'logo' }, 'Bugalter', h('b', {}, 'SZ')),
+            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ')), h('div', { class: 'brand-icons' }, headerIcon('donate', 'Поддержать автора', 'donate'), headerIcon('support', 'Поддержка', 'support'))),
             tabs,
             h(
               'div',
               { class: 'user' },
-              h('span', { class: 'user-nick' }, state.user.nick),
+              h('button', { class: 'user-nick', type: 'button', title: 'Мой аккаунт', 'aria-label': 'Мой аккаунт: ' + state.user.nick, onclick: () => (location.hash = '#/account') }, icon('user'), h('span', {}, state.user.nick)),
               h(
                 'button',
                 {
@@ -249,8 +309,12 @@
     const b = shell.buttons[tab];
     const ind = shell.ind;
     if (!animate) ind.style.transition = 'none';
-    ind.style.width = b.offsetWidth + 'px';
-    ind.style.transform = 'translateX(' + b.offsetLeft + 'px)';
+    if (!b) {
+      ind.style.width = '0px'; // страница аккаунта не входит в вкладки
+    } else {
+      ind.style.width = b.offsetWidth + 'px';
+      ind.style.transform = 'translateX(' + b.offsetLeft + 'px)';
+    }
     if (!animate) {
       void ind.offsetWidth;
       ind.style.transition = '';
@@ -269,6 +333,7 @@
     window.scrollTo(0, 0);
     if (tab === 'auction') viewAuction(shell.main);
     else if (tab === 'ledger') viewLedger(shell.main);
+    else if (tab === 'account') viewAccount(shell.main);
     else if (id) viewNote(shell.main, id);
     else viewNotes(shell.main);
   }
@@ -309,6 +374,7 @@
           try {
             const r = await api('/auth/' + mode, { method: 'POST', body: { nick: nick.value, password: pass.value } });
             state.user = r.user;
+            await loadHidden();
             if (location.hash && location.hash !== '#/') route();
             else location.hash = '#/auction';
           } catch (ex) {
@@ -344,6 +410,7 @@
 
   function qualityBits(l) {
     const out = [];
+    if (l.mod) out.push(h('span', { class: 'tag mod' }, '«' + l.mod + '»')); // оружейный модуль: название идёт первым
     if (l.qlt !== null && l.qlt !== undefined && QLT[l.qlt]) out.push(h('span', { class: 'q', style: { color: QLT[l.qlt][1] } }, QLT[l.qlt][0]));
     // заточка показывается всегда, даже +0: от неё сильно зависит цена
     if (l.ptn !== null && l.ptn !== undefined && (l.qlt !== null || l.ptn > 0)) out.push(h('span', { class: 'tag' }, '+' + l.ptn));
@@ -356,7 +423,8 @@
     const q = b.qlt !== null && b.qlt !== undefined && QLT[b.qlt] ? QLT[b.qlt][0] : '';
     let p = '';
     if (b.ptn !== null && b.ptn !== undefined) p = b.exact ? '+' + b.ptn : '+' + b.ptnFrom + '…+' + b.ptn;
-    return (q + ' ' + p).trim();
+    const qp = (q + ' ' + p).trim();
+    return b.mod ? (b.mod + (qp ? ' · ' + qp : '')).trim() : qp;
   }
   function refTitle(ref) {
     if (!ref) return '';
@@ -425,10 +493,11 @@
     /* --- сканер: на Cloudflare нет фонового процесса, поэтому шаг сканирования запускает открытая страница --- */
     let ticking = false;
     async function runTick() {
-      if (document.hidden || ticking) return;
+      if (document.hidden || ticking || state.serverScan) return;
       ticking = true;
       try {
-        await api('/auction/tick', { method: 'POST', body: {} });
+        const r = await api('/auction/tick', { method: 'POST', body: {} });
+        if (r && r.background) state.serverScan = true; // сервер сканирует сам, вкладке тики не нужны
       } catch (_) {
       } finally {
         ticking = false;
@@ -540,13 +609,14 @@
         try {
           const r = await api('/auction/feed?region=' + view.region + '&after=' + view.lastSeq + '&limit=' + (first ? 40 : 60));
           view.lastSeq = Math.max(view.lastSeq, r.seq);
-          if (!r.items.length) {
+          const items = r.items.filter((l) => !state.hidden.has(l.itemId));
+          if (!items.length) {
             if (first && !feedList.querySelector('.lot')) feedList.replaceChildren(feedEmpty());
             return;
           }
           if (!feedList.querySelector('.lot')) feedList.replaceChildren();
           const frag = document.createDocumentFragment();
-          for (const l of r.items) frag.append(lotRow(l, { onOpen: open(l), fresh: !first }));
+          for (const l of items) frag.append(lotRow(l, { onOpen: open(l), fresh: !first }));
           feedList.prepend(frag);
           if (feedList.scrollTop < 40) feedList.scrollTop = 0;
           while (feedList.children.length > 60) feedList.lastChild.remove();
@@ -555,9 +625,10 @@
       async function loadDeals() {
         if (document.hidden) return;
         try {
-          const r = await api('/auction/deals?region=' + view.region + '&limit=6');
-          if (!r.items.length) return dealsBox.replaceChildren(dealsEmpty);
-          dealsBox.replaceChildren(...r.items.map((l) => dealCard(l, open(l))));
+          const r = await api('/auction/deals?region=' + view.region + '&limit=12');
+          const items = r.items.filter((l) => !state.hidden.has(l.itemId)).slice(0, 6);
+          if (!items.length) return dealsBox.replaceChildren(dealsEmpty);
+          dealsBox.replaceChildren(...items.map((l) => dealCard(l, open(l))));
         } catch (_) {}
       }
       loadFeed(true);
@@ -610,7 +681,18 @@
       const backButton = () => h('button', { class: 'btn ghost small', type: 'button', onclick: showHome, style: { justifySelf: 'start' } }, icon('back'), 'К ленте');
 
       // Выбранные фильтры живут вне itemPanel: страница перерисовывается каждые 20 секунд.
-      const sel = { qlt: 'all', ptn: 'all' };
+      const sel = { mod: 'all', qlt: 'all', ptn: 'all' };
+      async function toggleHide() {
+        const hid = state.hidden.has(id);
+        try {
+          await api('/hidden/' + encodeURIComponent(id), { method: hid ? 'DELETE' : 'PUT', body: hid ? undefined : {} });
+          if (hid) state.hidden.delete(id);
+          else state.hidden.add(id);
+          rerender();
+        } catch (_) {}
+      }
+      // Модули: сначала по названию, затем по качеству, заточке и цене.
+      const modOrder = (a, b) => String(a.mod || '').localeCompare(String(b.mod || ''), 'ru') || (a.qlt ?? -1) - (b.qlt ?? -1) || (a.ptn ?? 0) - (b.ptn ?? 0) || (a.buyoutPrice > 0 ? a.unit : Infinity) - (b.buyoutPrice > 0 ? b.unit : Infinity);
       let lastData = null;
       const rerender = () => lastData && holder.replaceChildren(...itemPanel(lastData));
       const medianOf = (arr) => {
@@ -622,34 +704,46 @@
       function itemPanel(d) {
         lastData = d;
         const s = d.stats;
-        const qltsPresent = [...new Set([...d.groups.map((g) => g[0]), ...d.lots.map((l) => l.qlt)].filter((v) => v !== null && v !== undefined))].sort((x, y) => x - y);
+        const modsPresent = d.mods || [];
+        const isMod = Boolean(d.isModule && modsPresent.length);
+        if (sel.mod !== 'all' && !modsPresent.includes(sel.mod)) sel.mod = 'all';
+        const modOk = (m) => !isMod || sel.mod === 'all' || (m || null) === sel.mod;
+        const qltsPresent = [...new Set([...d.groups.filter((g) => modOk(g[4])).map((g) => g[0]), ...d.lots.filter((l) => modOk(l.mod)).map((l) => l.qlt)].filter((v) => v !== null && v !== undefined))].sort((x, y) => x - y);
         if (sel.qlt !== 'all' && !qltsPresent.includes(sel.qlt)) sel.qlt = 'all';
-        const ptnsPresent = [...new Set([...d.groups.filter((g) => g[0] === sel.qlt).map((g) => g[1]), ...d.lots.filter((l) => l.qlt === sel.qlt).map((l) => l.ptn ?? 0)])].filter((v) => v !== null).sort((x, y) => x - y);
+        const ptnsPresent = [...new Set([...d.groups.filter((g) => modOk(g[4]) && g[0] === sel.qlt).map((g) => g[1]), ...d.lots.filter((l) => modOk(l.mod) && l.qlt === sel.qlt).map((l) => l.ptn ?? 0)])].filter((v) => v !== null).sort((x, y) => x - y);
         if (sel.ptn !== 'all' && !ptnsPresent.includes(sel.ptn)) sel.ptn = 'all';
         const filtered = sel.qlt !== 'all';
 
-        const match = (q, p) => (sel.qlt === 'all' || q === sel.qlt) && (sel.ptn === 'all' || (p ?? 0) === sel.ptn);
-        const lots = d.lots.filter((l) => match(l.qlt, l.ptn));
+        const match = (q, p, m) => modOk(m) && (sel.qlt === 'all' || q === sel.qlt) && (sel.ptn === 'all' || (p ?? 0) === sel.ptn);
+        const lots = d.lots.filter((l) => match(l.qlt, l.ptn, l.mod));
+        if (isMod) lots.sort(modOrder);
         const lotsWithBuyout = lots.filter((l) => l.buyoutPrice > 0);
         const minNow = lotsWithBuyout.length ? Math.min(...lotsWithBuyout.map((l) => l.unit)) : 0;
 
         // Медиана выбранной группы: у предметов с качеством она считается только по продажам того же качества и заточки.
         let medVal = null;
         let medNote = '';
-        if (!d.hasQuality) {
-          if (s) {
+        if (isMod && sel.mod === 'all') medNote = 'выберите модуль';
+        else if (!d.hasQuality) {
+          if (isMod) {
+            const g = d.groups.find((x) => x[4] === sel.mod);
+            if (g) {
+              medVal = g[2];
+              medNote = g[3] + ' продаж';
+            } else medNote = 'нет продаж';
+          } else if (s) {
             medVal = s.median;
             medNote = s.samples + ' продаж';
           }
         } else if (!filtered) medNote = 'выберите качество';
         else if (sel.ptn !== 'all') {
-          const g = d.groups.find((x) => x[0] === sel.qlt && x[1] === sel.ptn);
+          const g = d.groups.find((x) => x[0] === sel.qlt && x[1] === sel.ptn && modOk(x[4]) && (!isMod || x[4] === sel.mod));
           if (g) {
             medVal = g[2];
             medNote = g[3] + ' продаж';
           } else medNote = 'нет продаж такой заточки';
         } else {
-          const pts = d.history.filter((p) => p[2] === sel.qlt);
+          const pts = d.history.filter((p) => p[2] === sel.qlt && modOk(p[4]));
           if (pts.length) {
             medVal = medianOf(pts.map((p) => p[1]));
             medNote = 'любая заточка, выберите точную';
@@ -663,9 +757,34 @@
             { class: 'item-head' },
             thumb(d.item.icon, d.item.name, 'lg'),
             h('h2', {}, d.item.name),
-            h('div', { style: { marginLeft: 'auto' } }, regionSeg(region, (v) => openItem(id, v), { all: false }))
+            h(
+              'div',
+              { style: { marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' } },
+              h('button', { class: 'btn ghost small', type: 'button', onclick: toggleHide, title: 'Скрытый предмет не показывается в новых и выгодных лотах, но находится поиском' }, icon(state.hidden.has(id) ? 'eye' : 'eyeoff'), state.hidden.has(id) ? 'Вернуть в ленту' : 'Скрыть из ленты'),
+              regionSeg(region, (v) => openItem(id, v), { all: false })
+            )
           )
         ];
+
+        if (isMod) {
+          const mchip = (value, label) =>
+            h(
+              'button',
+              {
+                class: 'chip',
+                type: 'button',
+                'aria-pressed': String(sel.mod === value),
+                onclick: () => {
+                  sel.mod = value;
+                  sel.qlt = 'all';
+                  sel.ptn = 'all';
+                  rerender();
+                }
+              },
+              label
+            );
+          nodes.push(h('div', { class: 'filters', role: 'group', 'aria-label': 'Модуль' }, h('span', { class: 'filter-label' }, 'Модуль'), mchip('all', 'Все'), modsPresent.map((m) => mchip(m, '«' + m + '»'))));
+        }
 
         if (qltsPresent.length) {
           const chip = (value, label, color) =>
@@ -716,14 +835,14 @@
         );
 
         // График: для предметов с качеством только по выбранной группе, иначе цены разных качеств перемешаются.
-        const chartPts = d.history.filter((p) => (d.hasQuality ? filtered && match(p[2], p[3]) : true)).map((p) => [p[0], p[1]]);
+        const chartPts = d.history.filter((p) => (isMod ? sel.mod !== 'all' && modOk(p[4]) && (!d.hasQuality || (filtered && match(p[2], p[3], p[4]))) : d.hasQuality ? filtered && match(p[2], p[3], p[4]) : true)).map((p) => [p[0], p[1]]);
         if (chartPts.length > 2) nodes.push(sparkline(chartPts, { samples: chartPts.length }));
 
         nodes.push(
           h(
             'section',
             { class: 'section' },
-            h('h2', { class: 'section-title' }, 'Лоты, сначала дешёвые'),
+            h('h2', { class: 'section-title' }, isMod ? 'Лоты по модулям: название, затем качество' : 'Лоты, сначала дешёвые'),
             lots.length
               ? h('div', { class: 'card lots' }, lots.slice(0, 60).map((l) => lotRow(l, { showName: false })))
               : h('div', { class: 'card empty' }, h('strong', {}, filtered ? 'Нет лотов с такими параметрами' : 'Сейчас лотов нет'), filtered ? 'Среди самых дешёвых лотов нет такого качества и заточки. Попробуйте другое.' : 'Предмет никто не продаёт в этом регионе.')
@@ -776,6 +895,8 @@
     let editingStart = false;
     let summary = null;
     let shown = 60;
+    let dayTimer = null;
+    let drawer = null;
 
     const page = h('div', { class: 'page' });
     root.append(page);
@@ -855,12 +976,20 @@
     const balanceBox = h('div', { class: 'card balance-card' });
     const summaryBox = h('div');
     const historyBox = h('div', { class: 'section' });
-    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Бухгалтер')), balanceBox, form, summaryBox, historyBox);
+    const archiveBtn = h('button', { class: 'btn ghost small', type: 'button', onclick: () => openArchive() }, icon('clock'), 'Архив');
+    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Бухгалтер'), archiveBtn), balanceBox, form, summaryBox, historyBox);
 
     async function load() {
       try {
         data = await api('/ledger?limit=500');
         draw();
+        // В 00:00 по UTC+3 день закрывается: список очищается, операции уходят в архив.
+        clearTimeout(dayTimer);
+        dayTimer = setTimeout(() => {
+          summary = null;
+          load();
+          if (drawer) showDays();
+        }, Math.max(1000, data.day.to - Date.now() + 1500));
       } catch (ex) {
         balanceBox.replaceChildren(h('div', { class: 'toast-err' }, ex.message));
       }
@@ -904,25 +1033,21 @@
 
       balanceBox.replaceChildren(
         h('div', {}, h('div', { class: 'balance-label' }, 'Баланс сейчас'), h('div', { class: 'balance num' + (neg ? ' neg' : ''), 'aria-live': 'polite' }, formatMoney(data.balance), h('small', {}, '₽'))),
-        h('div', { class: 'balance-row' }, startBlock, h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Доходы всего'), h('span', { class: 'v pos num' }, '+' + formatMoney(data.income))), h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Расходы всего'), h('span', { class: 'v neg num' }, '−' + formatMoney(data.expense))))
+        h('div', { class: 'balance-row' }, startBlock, h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Доходы сегодня'), h('span', { class: 'v pos num' }, '+' + formatMoney(data.day.income))), h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Расходы сегодня'), h('span', { class: 'v neg num' }, '−' + formatMoney(data.day.expense))))
       );
     }
 
     function drawHistory() {
       historyBox.replaceChildren();
-      historyBox.append(h('h2', { class: 'section-title' }, 'История операций'));
+      const closeAt = clock(data.day.to);
+      historyBox.append(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, 'Операции за сегодня'), h('span', { class: 'sub' }, 'День закрывается в 00:00 по UTC+3 (у вас в ' + closeAt + '), после этого операции уходят в архив')));
       if (!data.entries.length) {
-        historyBox.append(h('div', { class: 'card empty' }, h('strong', {}, 'Операций пока нет'), 'Введите сумму выше и нажмите «Добавить доход» или «Добавить расход».'));
+        historyBox.append(h('div', { class: 'card empty' }, h('strong', {}, 'Сегодня операций нет'), 'Введите сумму выше и нажмите «Добавить доход» или «Добавить расход». Прошлые дни лежат в архиве.'));
         return;
       }
       const card = h('div', { class: 'card' });
-      let lastDay = '';
+      card.append(h('div', { class: 'day-label' }, 'Сегодня, ' + fmtDay(data.day.from)));
       for (const e of data.entries.slice(0, shown)) {
-        const dk = dayKey(e.ts);
-        if (dk !== lastDay) {
-          lastDay = dk;
-          card.append(h('div', { class: 'day-label' }, dayLabel(e.ts)));
-        }
         const inc = e.type === 'income';
         card.append(
           h(
@@ -966,7 +1091,6 @@
       summaryBox.replaceChildren();
       if (!summary) return;
       const s = summary;
-      const d = new Date(s.from);
       const verdictText = s.verdict === 'plus' ? 'День в плюсе' : s.verdict === 'minus' ? 'День в минусе' : 'День в нуле';
       const parts = [];
       if (!s.incomeCount && !s.expenseCount) {
@@ -980,7 +1104,7 @@
         h(
           'section',
           { class: 'summary' + (s.verdict === 'minus' ? ' minus' : ''), 'aria-label': 'Итог дня' },
-          h('div', { class: 'summary-head' }, h('div', {}, h('div', { class: 'sub' }, 'Итог за сегодня, ' + d.getDate() + ' ' + MONTHS[d.getMonth()]), h('div', { class: 'summary-verdict num' }, verdictText + ': ' + formatSigned(s.net) + ' ₽')), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Закрыть итог', onclick: () => ((summary = null), drawSummary()) }, icon('close'))),
+          h('div', { class: 'summary-head' }, h('div', {}, h('div', { class: 'sub' }, 'Итог за сегодня, ' + fmtDay(s.from)), h('div', { class: 'summary-verdict num' }, verdictText + ': ' + formatSigned(s.net) + ' ₽')), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Закрыть итог', onclick: () => ((summary = null), drawSummary()) }, icon('close'))),
           h(
             'div',
             { class: 'summary-grid' },
@@ -996,12 +1120,8 @@
     }
 
     async function showSummary() {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
       try {
-        summary = await api('/ledger/summary?from=' + start.getTime() + '&to=' + end.getTime());
+        summary = await api('/ledger/summary'); // границы дня задаёт сервер: 00:00 по UTC+3
         drawSummary();
       } catch (ex) {
         formErr.textContent = ex.message;
@@ -1015,8 +1135,178 @@
       if (summary) showSummary();
     }
 
+    /* --- архив: панель слева, как история в браузере --- */
+    function entryRow(e) {
+      const inc = e.type === 'income';
+      return h('div', { class: 'entry' }, h('div', { class: 'sign' + (inc ? '' : ' out') }, inc ? '+' : '−'), h('div', { class: 'entry-note' }, e.note || (inc ? 'Доход' : 'Расход')), h('div', { class: 'entry-time num' }, clock(e.ts)), h('div', { class: 'entry-sum num ' + (inc ? 'pos' : 'neg') }, (inc ? '+' : '−') + formatMoney(e.amount)));
+    }
+
+    function closeArchive() {
+      if (!drawer) return;
+      document.removeEventListener('keydown', drawer.onKey);
+      drawer.root.classList.remove('open');
+      const gone = drawer.root;
+      drawer = null;
+      setTimeout(() => gone.remove(), 260);
+      archiveBtn.focus();
+    }
+
+    async function showDays() {
+      if (!drawer) return;
+      const { body, title } = drawer;
+      title.textContent = 'Архив';
+      body.replaceChildren(h('div', { class: 'sub' }, 'Загружаю…'));
+      try {
+        const r = await api('/ledger/archive');
+        if (!drawer) return;
+        body.replaceChildren(h('p', { class: 'sub drawer-note' }, 'Дни закрываются в 00:00 по UTC+3. Операции в архиве можно только смотреть.'));
+        if (!r.days.length) {
+          body.append(h('div', { class: 'card empty' }, h('strong', {}, 'Архив пока пуст'), 'Сегодняшние операции попадут сюда после 00:00 по UTC+3.'));
+          return;
+        }
+        for (const d of r.days) {
+          body.append(
+            h(
+              'button',
+              { class: 'day-row', type: 'button', onclick: () => showDay(d) },
+              h('div', {}, h('div', { class: 'day-date' }, fmtDay(d.day)), h('div', { class: 'sub' }, d.count + ' ' + plural(d.count, 'операция', 'операции', 'операций'))),
+              h('div', { class: 'day-net num ' + (d.net > 0 ? 'pos' : d.net < 0 ? 'neg' : '') }, formatSigned(d.net) + ' ₽'),
+              icon('chev')
+            )
+          );
+        }
+      } catch (ex) {
+        body.replaceChildren(h('div', { class: 'toast-err' }, ex.message));
+      }
+    }
+
+    async function showDay(d) {
+      if (!drawer) return;
+      const { body, title } = drawer;
+      title.textContent = fmtDay(d.day);
+      const back = h('button', { class: 'btn ghost small', type: 'button', style: { justifySelf: 'start' }, onclick: showDays }, icon('back'), 'Все дни');
+      body.replaceChildren(back, h('div', { class: 'sub' }, 'Загружаю…'));
+      try {
+        const r = await api('/ledger/archive/' + d.day);
+        if (!drawer) return;
+        const grid = h(
+          'div',
+          { class: 'summary-grid drawer-grid' },
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Заработано'), h('span', { class: 'v pos num' }, '+' + formatMoney(r.earned))),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Убытки'), h('span', { class: 'v neg num' }, '−' + formatMoney(r.spent))),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Итог дня'), h('span', { class: 'v num ' + (r.net >= 0 ? 'pos' : 'neg') }, formatSigned(r.net) + ' ₽')),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Баланс на конец дня'), h('span', { class: 'v num ' + (d.balanceEnd >= 0 ? 'pos' : 'neg') }, rub(d.balanceEnd)))
+        );
+        const list = h('div', { class: 'card' });
+        for (const e of r.entries) list.append(entryRow(e));
+        if (!r.entries.length) list.append(h('div', { class: 'empty' }, 'В этот день операций не было.'));
+        body.replaceChildren(back, grid, list);
+      } catch (ex) {
+        body.replaceChildren(back, h('div', { class: 'toast-err' }, ex.message));
+      }
+    }
+
+    function openArchive() {
+      if (drawer) return;
+      const body = h('div', { class: 'drawer-body' });
+      const title = h('h2', { class: 'drawer-title' }, 'Архив');
+      const panel = h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Архив операций' }, h('div', { class: 'drawer-head' }, title, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Закрыть архив', onclick: closeArchive }, icon('close'))), body);
+      const root = h('div', { class: 'drawer-root' }, h('div', { class: 'scrim', onclick: closeArchive }), panel);
+      const onKey = (e) => {
+        if (e.key === 'Escape') closeArchive();
+      };
+      document.addEventListener('keydown', onKey);
+      document.body.append(root);
+      requestAnimationFrame(() => root.classList.add('open'));
+      drawer = { root, body, title, onKey };
+      showDays();
+    }
+
+    const onVisible = () => {
+      if (!document.hidden && data && Date.now() >= data.day.to) {
+        summary = null;
+        load();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    onLeave(() => {
+      clearTimeout(dayTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+      if (drawer) {
+        document.removeEventListener('keydown', drawer.onKey);
+        drawer.root.remove();
+        drawer = null;
+      }
+    });
+
     balanceBox.append(h('div', { class: 'sub' }, 'Загружаю…'));
     load();
+  }
+
+  /* ===================== аккаунт ===================== */
+
+  function viewAccount(root) {
+    const page = h('div', { class: 'page' });
+    root.append(page);
+    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Аккаунт')));
+    const card = h('div', { class: 'card account-card' }, h('div', { class: 'sub' }, 'Загружаю…'));
+    const hiddenBox = h('section', { class: 'section' });
+    page.append(card, hiddenBox);
+
+    function row(k, v) {
+      return h('div', { class: 'acc-row' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));
+    }
+
+    (async () => {
+      try {
+        const a = await api('/account');
+        card.replaceChildren(
+          h('div', { class: 'acc-head' }, h('div', { class: 'avatar', 'aria-hidden': 'true' }, String(a.nick).charAt(0).toUpperCase()), h('div', {}, h('div', { class: 'acc-nick' }, a.nick), h('div', { class: 'sub' }, 'Ваш аккаунт'))),
+          h('div', { class: 'acc-rows' }, row('Ник', a.nick), row('Последний вход', a.lastLogin ? fmtDateTime(a.lastLogin) : '—'), row('Регистрация', a.createdAt ? fmtDateTime(a.createdAt) : '—')),
+          h('div', { class: 'acc-sub' }, h('div', {}, h('div', { class: 'acc-sub-title' }, 'Платная подписка'), h('div', { class: 'sub' }, 'Дополнительные возможности появятся позже')), h('button', { class: 'btn', type: 'button', disabled: true, title: 'Пока недоступно' }, icon('lock'), 'Оформить подписку'))
+        );
+      } catch (ex) {
+        card.replaceChildren(h('div', { class: 'toast-err' }, ex.message));
+      }
+    })();
+
+    async function drawHidden() {
+      const items = await loadHidden();
+      hiddenBox.replaceChildren(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, 'Скрытые предметы'), h('span', { class: 'sub' }, 'Не показываются в новых и выгодных лотах, но находятся поиском')));
+      if (!items.length) {
+        hiddenBox.append(h('div', { class: 'card empty' }, h('strong', {}, 'Список пуст'), 'Откройте предмет через поиск и нажмите «Скрыть из ленты», если он вам не нужен.'));
+        return;
+      }
+      const list = h('div', { class: 'card lots' });
+      for (const it of items) {
+        list.append(
+          h(
+            'div',
+            { class: 'lot hidden-item' },
+            thumb(it.icon, it.name),
+            h('div', { class: 'lot-main' }, h('div', { class: 'lot-name' }, h('span', { class: 'nm' }, it.name))),
+            h(
+              'button',
+              {
+                class: 'btn ghost small',
+                type: 'button',
+                onclick: async () => {
+                  try {
+                    await api('/hidden/' + encodeURIComponent(it.id), { method: 'DELETE' });
+                    state.hidden.delete(it.id);
+                    drawHidden();
+                  } catch (_) {}
+                }
+              },
+              icon('eye'),
+              'Вернуть'
+            )
+          )
+        );
+      }
+      hiddenBox.append(list);
+    }
+    drawHidden();
   }
 
   const plural = (n, a, b, c) => {
@@ -1197,6 +1487,7 @@
       const me = await api('/auth/me');
       if (me.user) {
         state.user = me.user;
+        await loadHidden();
         route();
       } else renderAuth();
     } catch (_) {
