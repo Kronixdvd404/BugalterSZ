@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBaseline, makeIndex, evaluate, isDeal } from '../src/deals.js';
+import { buildBaseline, makeIndex, evaluate, isDeal, trimOutliers } from '../src/deals.js';
 
 const OPTS = { minSamples: 5, ptnWindow: 2 };
 const SC = { dealMin: 0.15, dealMinSavings: 1000 };
@@ -86,4 +86,24 @@ test('если в истории нет данных о заточке, зато
   const idx = indexFor(sales);
   assert.equal(evaluate(idx, lot(2, 7, 50_000)), null);
   assert.ok(evaluate(idx, lot(2, 0, 50_000)));
+});
+
+test('оверпрайс и лоупрайс в истории не сдвигают медиану', () => {
+  // Нормальные продажи ~100 000, плюс три «космических» (оверпрайс) и две заниженные по ошибке (лоупрайс).
+  const sales = [...many(2, 0, 10, 0.5), ...[10, 12, 15].map((k) => sale(2, 0, k)), ...[0.01, 0.02].map((k) => sale(2, 0, k))];
+  const idx = indexFor(sales);
+  const d = evaluate(idx, lot(2, 0, price(2, 0) * 0.6));
+  assert.ok(d);
+  const normal = price(2, 0) * 0.5;
+  assert.ok(Math.abs(d.median - normal) / normal < 0.05, 'медиана около обычной цены: ' + d.median);
+  assert.equal(d.samples, 10, 'выбросы не учитываются в выборке');
+  // Лот на 40% ниже чистой медианы выгоден.
+  assert.ok(isDeal(evaluate(idx, lot(2, 0, normal * 0.6)), lot(2, 0, normal * 0.6), SC, NOW));
+});
+
+test('trimOutliers: на малой выборке и при одинаковых ценах ничего не режет', () => {
+  assert.deepEqual(trimOutliers([1, 2, 3, 1000]), [1, 2, 3, 1000]);
+  const same = [5, 5, 5, 5, 5, 5, 5, 5, 5, 900];
+  assert.deepEqual(trimOutliers(same), same);
+  assert.deepEqual(trimOutliers([1, 100, 101, 102, 103, 104, 105, 106, 107, 5000]), [100, 101, 102, 103, 104, 105, 106, 107]);
 });

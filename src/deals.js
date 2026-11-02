@@ -7,6 +7,10 @@
  * У оружейных модулей сначала сравнивается НАЗВАНИЕ модуля («Снайпер», «Пробойник» …), и только потом качество:
  * модули с разными названиями это фактически разные предметы с разной ценой.
  *
+ * Медиана считается по «очищенной» выборке: из неё выбрасываются аномально дорогие (оверпрайс) и аномально дешёвые
+ * (демпинг, ошибки ввода) продажи по правилу Тьюки (за пределами Q1 − 1,5·IQR … Q3 + 1,5·IQR). Так одна-две случайные
+ * сделки не сдвигают «справедливую» цену, а выгодным считается лот, который заметно ниже этой медианы.
+ *
  * Если точных продаж (то же качество и та же заточка) мало, окно расширяется только ВНИЗ по заточке:
  * +5 можно сравнить с +4 и +3, но не с +6. Продажи с меньшей заточкой стоят дешевле, поэтому
  * такая медиана может только занизить «справедливую» цену и не создаёт ложных выгодных лотов.
@@ -26,6 +30,26 @@ export function quantile(sorted, q) {
   const lo = Math.floor(pos);
   const hi = Math.ceil(pos);
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/** Минимум продаж, с которого вообще имеет смысл отсекать выбросы (на малой выборке «выбросы» — это просто разброс цен). */
+export const TRIM_MIN_SAMPLES = 8;
+
+/**
+ * Убирает оверпрайс и лоупрайс из отсортированного массива цен (правило Тьюки). Возвращает новый отсортированный массив.
+ * Если выборка мала, цены почти одинаковые или после отсечения осталось слишком мало продаж, возвращает исходный массив.
+ */
+export function trimOutliers(sorted, k = 1.5) {
+  const n = sorted.length;
+  if (n < TRIM_MIN_SAMPLES) return sorted;
+  const q1 = quantile(sorted, 0.25);
+  const q3 = quantile(sorted, 0.75);
+  const iqr = q3 - q1;
+  if (!(iqr > 0)) return sorted;
+  const lo = q1 - k * iqr;
+  const hi = q3 + k * iqr;
+  const kept = sorted.filter((v) => v >= lo && v <= hi);
+  return kept.length >= Math.max(3, Math.ceil(n / 2)) ? kept : sorted;
 }
 
 const isNum = (v) => v !== null && v !== undefined && Number.isFinite(Number(v));
@@ -79,7 +103,8 @@ export function makeIndex(base, opts) {
   const cache = new Map();
 
   function stat(arr, basis) {
-    return { median: median(arr), p25: quantile(arr, 0.25), samples: arr.length, basis };
+    const clean = trimOutliers(arr); // медиана без оверпрайса и лоупрайса
+    return { median: median(clean), p25: quantile(clean, 0.25), samples: clean.length, basis };
   }
 
   /** Опорная цена для лота или null, если честно сравнить не с чем. */
@@ -116,7 +141,7 @@ export function makeIndex(base, opts) {
     const out = [];
     for (const [k, arr] of groups) {
       const [m, q, p] = meta.get(k);
-      out.push([q, p, Math.round(median(arr)), arr.length, m]);
+      out.push([q, p, Math.round(median(trimOutliers(arr))), arr.length, m]);
     }
     return out.sort((a, b) => String(a[4] || '').localeCompare(String(b[4] || ''), 'ru') || (a[0] ?? -1) - (b[0] ?? -1) || (a[1] ?? 0) - (b[1] ?? 0));
   }

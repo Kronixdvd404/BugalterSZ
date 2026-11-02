@@ -8,7 +8,7 @@
  * Блокировка (lease) в таблице meta не даёт нескольким вкладкам делать тики одновременно
  * и держит общий темп запросов к EXBO в пределах RATE_LIMIT_PER_MIN.
  */
-import { buildBaseline, makeIndex, evaluate, isDeal, median, quantile } from './deals.js';
+import { buildBaseline, makeIndex, evaluate, isDeal, median, quantile, trimOutliers } from './deals.js';
 import { isModuleItem } from './modules.js';
 
 const BASELINE_TTL = 45 * 60 * 1000;
@@ -409,7 +409,7 @@ export async function itemDetail({ db, api, config, catalog, region, id }) {
   let stats = null;
   let history = [];
   if (base && base.pts.length) {
-    const all = base.pts.map((p) => p[1]).sort((a, b) => a - b);
+    const all = trimOutliers(base.pts.map((p) => p[1]).sort((a, b) => a - b)); // без оверпрайса и лоупрайса
     stats = { median: Math.round(median(all)), p25: Math.round(quantile(all, 0.25)), samples: all.length, lastSale: Math.max(...base.pts.map((p) => p[0] || 0)) };
     history = base.pts
       .filter((p) => p[0])

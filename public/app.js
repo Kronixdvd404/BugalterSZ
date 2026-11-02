@@ -292,7 +292,8 @@
             )
           )
         ),
-        main
+        main,
+        siteFooter()
       )
     );
     shell = { tabs, ind, buttons, main };
@@ -338,6 +339,34 @@
     else viewNotes(shell.main);
   }
   window.addEventListener('hashchange', route);
+
+  /* ===================== подвал сайта ===================== */
+
+  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026 };
+
+  /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
+  function siteFooter() {
+    const dot = () => h('span', { class: 'foot-dot', 'aria-hidden': 'true' });
+    return h(
+      'footer',
+      { class: 'site-footer' },
+      h(
+        'div',
+        { class: 'site-footer-in' },
+        h(
+          'div',
+          { class: 'foot-left' },
+          h('a', { class: 'foot-brand', href: '/', 'aria-label': SITE.name }, 'Bugalter', h('b', {}, 'SZ')),
+          h('span', { class: 'foot-copy' }, '© ' + SITE.year + ' All rights reserved'),
+          dot(),
+          h('a', { class: 'foot-link', href: '/privacy' }, 'Политика конфиденциальности'),
+          dot(),
+          h('a', { class: 'foot-link', href: '/terms' }, 'Пользовательское соглашение')
+        ),
+        h('div', { class: 'foot-right' }, h('span', { class: 'foot-dev' }, 'Разработчик: ', h('b', {}, SITE.developer)))
+      )
+    );
+  }
 
   /* ===================== вход и регистрация ===================== */
 
@@ -401,7 +430,8 @@
           h('div', { class: 'auth-logo' }, h('div', { class: 'logo' }, 'Bugalter', h('b', {}, 'SZ')), h('p', { class: 'sub' }, 'Аукцион, учёт денег и заметки в одном месте')),
           form
         )
-      )
+      ),
+      siteFooter()
     );
     nick.focus();
   }
@@ -1491,7 +1521,7 @@
         route();
       } else renderAuth();
     } catch (_) {
-      $app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'card empty' }, h('strong', {}, 'Сервер не отвечает'), 'Проверьте, что BugalterSZ запущен, и обновите страницу.')));
+      $app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'card empty' }, h('strong', {}, 'Сервер не отвечает'), 'Проверьте, что BugalterSZ запущен, и обновите страницу.')), siteFooter());
     }
   })();
 })();
