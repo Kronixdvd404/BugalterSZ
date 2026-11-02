@@ -10,7 +10,7 @@
  * Остальные категории: bullet, grenade, supply/medicine, containers, backpacks, attachment/*, weapon/*, armor/*, artefact/* …
  */
 export const DEFAULT_BLACKLIST = {
-  categories: ['misc', 'supply/food', 'supply/drink', 'other', 'bullet', 'grenade', 'medicine'],
+  categories: ['misc', 'supply/food', 'supply/drink', 'other', 'bullet', 'grenade', 'medicine', 'supply',],
   keepCategories: ['other/skins'], // исключения из categories: эти категории остаются в ленте
   ids: [], // отдельные предметы по id (id виден в адресе предмета в базе EXBO)
   names: [] // фрагменты названий, без учёта регистра
