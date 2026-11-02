@@ -388,7 +388,8 @@
 
   /* ===================== подвал сайта ===================== */
 
-  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026 };
+  // discord: сюда вставь ссылку-приглашение на свой сервер
+  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
 
   /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
   function siteFooter() {
@@ -409,7 +410,12 @@
           dot(),
           h('a', { class: 'foot-link', href: '/terms' }, 'Пользовательское соглашение')
         ),
-        h('div', { class: 'foot-right' }, h('span', { class: 'foot-dev' }, 'Разработчик: ', h('b', {}, SITE.developer)))
+        h(
+          'div',
+          { class: 'foot-right' },
+          h('a', { class: 'foot-discord', href: SITE.discord, target: '_blank', rel: 'noopener noreferrer', title: 'Наш Discord-сервер', 'aria-label': 'Discord-сервер' }, h('span', { class: 'foot-discord-ico', 'aria-hidden': 'true' })),
+          h('span', { class: 'foot-dev' }, 'Разработчик: ', h('b', {}, SITE.developer))
+        )
       )
     );
   }

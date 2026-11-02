@@ -482,6 +482,10 @@ button.lot:hover { background: var(--surface-2); }
 .foot-link { color: var(--text); text-decoration: none; transition: color 0.15s; }
 .foot-link:hover { color: var(--acid-1); }
 .foot-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); flex: none; }
+.foot-discord { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); transition: border-color 0.15s, background 0.15s; }
+.foot-discord:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.06); }
+.foot-discord-ico { width: 20px; height: 20px; background: #fff; -webkit-mask: url('/discord.png') center / contain no-repeat; mask: url('/discord.png') center / contain no-repeat; transition: opacity 0.15s; }
+.foot-discord:hover .foot-discord-ico { opacity: 0.8; }
 .foot-dev b { color: var(--text); font-weight: 500; }
 @media (max-width: 760px) {
   .site-footer-in { padding: 18px 16px; flex-direction: column; align-items: flex-start; }
