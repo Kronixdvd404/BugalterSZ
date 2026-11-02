@@ -503,3 +503,10 @@ button.lot:hover { background: var(--surface-2); }
 .legal a { color: var(--acid-1); }
 body.legal-page { display: flex; flex-direction: column; }
 .legal code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+
+/* окошко «Поддержка» */
+.pop-support { display: grid; gap: 10px; white-space: normal; min-width: 260px; max-width: calc(100vw - 32px); }
+.pop-title { font-weight: 600; }
+.pop-mail { color: var(--acid-1); font-size: 14px; word-break: break-all; user-select: all; }
+.pop-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pop-actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }

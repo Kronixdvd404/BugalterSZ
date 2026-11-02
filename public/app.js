@@ -103,8 +103,9 @@
   }
 
   // Ссылки для значков в шапке. Пока пусто: по нажатию показывается подсказка «скоро».
-  const LINKS = { donate: 'https://send.monobank.ua/jar/2cc6p7nAeA', support: 'mailto:support.bugaltersz@gmail.com?subject=Вопрос%20по%20сайту' };
-
+  const LINKS = { donate: 'https://send.monobank.ua/jar/2cc6p7nAeA' };
+  const SUPPORT = { email: 'support.bugaltersz@gmail.com', subject: 'Вопрос по сайту' };
+  
   const QLT = [
     ['Обычный', 'var(--q0)'],
     ['Необычный', 'var(--q1)'],
@@ -216,9 +217,53 @@
     return { tab, id: m[1] || '' };
   }
 
-  /** Значок в шапке: открывает ссылку из LINKS или, пока её нет, показывает короткую подсказку. */
+    /** Значок в шапке: «Поддержка» открывает окошко с почтой, остальные открывают ссылку из LINKS (или показывают подсказку, пока ссылки нет). */
   function headerIcon(name, label, linkKey) {
     let tip = null;
+    let box = null;
+    const closeBox = () => {
+      if (box) box.remove();
+      box = null;
+      document.removeEventListener('click', outside, true);
+    };
+    function outside(e) {
+      if (box && !box.contains(e.target) && !btn.contains(e.target)) closeBox();
+    }
+    // Почта: не через window.open('mailto:'), иначе без почтовой программы открывается пустая вкладка с вечной загрузкой.
+    function openSupport() {
+      if (box) return closeBox();
+      const copy = h('button', { class: 'btn small', type: 'button' }, 'Скопировать адрес');
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(SUPPORT.email);
+          copy.textContent = 'Скопировано';
+        } catch (_) {
+          const r = document.createRange();
+          r.selectNodeContents(addr);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          copy.textContent = 'Выделено, нажмите Ctrl+C';
+        }
+      });
+      const addr = h('div', { class: 'pop-mail num' }, SUPPORT.email);
+      const gmail = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(SUPPORT.email) + '&su=' + encodeURIComponent(SUPPORT.subject);
+      box = h(
+        'div',
+        { class: 'pop pop-support', role: 'dialog', 'aria-label': label },
+        h('div', { class: 'pop-title' }, 'Написать в поддержку'),
+        addr,
+        h(
+          'div',
+          { class: 'pop-actions' },
+          copy,
+          h('a', { class: 'btn small', href: gmail, target: '_blank', rel: 'noopener noreferrer' }, 'Открыть Gmail'),
+          h('a', { class: 'btn ghost small', href: 'mailto:' + SUPPORT.email + '?subject=' + encodeURIComponent(SUPPORT.subject) }, 'Почтовая программа')
+        )
+      );
+      btn.parentNode.append(box);
+      setTimeout(() => document.addEventListener('click', outside, true), 0);
+    }
     const btn = h(
       'button',
       {
@@ -227,6 +272,7 @@
         title: label,
         'aria-label': label,
         onclick: () => {
+          if (linkKey === 'support') return openSupport();
           if (LINKS[linkKey]) return window.open(LINKS[linkKey], '_blank', 'noopener');
           if (tip) return;
           tip = h('div', { class: 'pop', role: 'status' }, label + ': ссылка появится позже');
