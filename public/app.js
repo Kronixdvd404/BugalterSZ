@@ -103,7 +103,7 @@
   }
 
   // Ссылки для значков в шапке. Пока пусто: по нажатию показывается подсказка «скоро».
-  const LINKS = { donate: '', support: '' };
+  const LINKS = { donate: '', support: 'mailto:support.bugaltersz@gmail.com?subject=Вопрос%20по%20сайту' };
 
   const QLT = [
     ['Обычный', 'var(--q0)'],
