@@ -389,7 +389,7 @@
   /* ===================== подвал сайта ===================== */
 
   // discord: сюда вставь ссылку-приглашение на свой сервер
-  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
+  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026, discord: 'https://discord.gg/ВАШ_КОД' };
 
   /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
   function siteFooter() {
@@ -418,6 +418,75 @@
         )
       )
     );
+  }
+
+  /* ===================== гайд после регистрации ===================== */
+
+  const guideKey = () => 'bsz_guide_' + (state.user && (state.user.id || state.user.nick));
+  function guideFlag(val) {
+    try {
+      if (val === undefined) return localStorage.getItem(guideKey());
+      if (val === null) localStorage.removeItem(guideKey());
+      else localStorage.setItem(guideKey(), val);
+    } catch (_) {}
+    return null;
+  }
+
+  /** Название как в шапке: Bugalter + акцентное SZ. */
+  const logoText = () => h('span', { class: 'logo guide-logo' }, 'Bugalter', h('b', {}, 'SZ'));
+
+  /** Показывает гайд, если он ещё не закрыт кнопкой «Я ознакомился». */
+  function maybeShowGuide() {
+    if (!state.user || guideFlag() !== 'pending' || document.querySelector('.guide-root')) return;
+    const feature = (ico, title, text) =>
+      h('section', { class: 'guide-item' }, h('div', { class: 'guide-ico' }, icon(ico)), h('div', {}, h('h3', { class: 'guide-grad' }, title), h('p', {}, text)));
+
+    const close = () => {
+      guideFlag('done');
+      document.removeEventListener('keydown', trap);
+      document.body.classList.remove('guide-open');
+      root.classList.remove('open');
+      setTimeout(() => root.remove(), 220);
+    };
+    const ok = h('button', { class: 'btn wide', type: 'button', onclick: close }, 'Я ознакомился');
+    const trap = (e) => {
+      if (e.key === 'Tab') {
+        const f = [...root.querySelectorAll('a[href], button')];
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) (e.preventDefault(), f[f.length - 1].focus());
+        else if (!e.shiftKey && i === f.length - 1) (e.preventDefault(), f[0].focus());
+      }
+    };
+
+    const body = h(
+      'div',
+      { class: 'guide-body' },
+      h('h2', { class: 'guide-title', id: 'guide-title' }, 'Гайд по ', logoText()),
+      h('p', { class: 'guide-lead' }, 'Основные функции сайта'),
+      feature('auction', 'Аукцион', 'Удобный интерфейс отображает новые лоты, выставленные на аукцион в двух регионах: RU и EU, а также выгодные предложения, цена которых существенно ниже рынка. Вы можете найти любой внутриигровой предмет в поиске и просмотреть историю его цен.'),
+      feature('ledger', 'Бухгалтер', 'Ваш личный помощник для подсчёта доходов и расходов: введите стартовую сумму и следите за своими финансовыми операциями. Смотрите итоги дня по кнопке, а по окончании дня все ваши операции заносятся в личный архив.'),
+      feature('notes', 'Заметки', 'Простой блокнот, встроенный в сайт: оставляйте себе напоминания, записывайте цели и всё, что душе угодно.'),
+      h('section', { class: 'guide-item' }, h('div', { class: 'guide-ico' }, h('img', { src: '/favicon.svg', alt: '', width: 26, height: 26 })), h('p', { class: 'guide-plain' }, 'Нажмите на свой никнейм, чтобы попасть в личный кабинет и просмотреть необходимую информацию, а также оформить платную подписку на расширенные функции.')),
+      h(
+        'section',
+        { class: 'guide-important' },
+        h('h3', {}, 'Важно!'),
+        h('p', {}, 'Ознакомьтесь перед использованием сервиса ', logoText(), ':'),
+        h('ul', {}, h('li', {}, h('a', { href: '/privacy', target: '_blank', rel: 'noopener' }, 'Политика конфиденциальности')), h('li', {}, h('a', { href: '/terms', target: '_blank', rel: 'noopener' }, 'Пользовательское соглашение')))
+      ),
+      h('p', { class: 'guide-note' }, 'Перейдите в Discord по иконке внизу сайта, если нуждаетесь в особых услугах, связанных с внутриигровой валютой ;)'),
+      h('p', { class: 'guide-note' }, 'Если хотите поддержать проект, все реквизиты по кнопке слева сверху. Спасибо!')
+    );
+
+    const panel = h('div', { class: 'guide', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'guide-title' }, body, h('div', { class: 'guide-foot' }, ok));
+    const root = h('div', { class: 'guide-root' }, h('div', { class: 'guide-scrim' }), panel);
+    document.body.append(root);
+    document.body.classList.add('guide-open');
+    document.addEventListener('keydown', trap);
+    requestAnimationFrame(() => {
+      root.classList.add('open');
+      ok.focus();
+    });
   }
 
   /* ===================== вход и регистрация ===================== */
@@ -456,8 +525,10 @@
             const r = await api('/auth/' + mode, { method: 'POST', body: { nick: nick.value, password: pass.value } });
             state.user = r.user;
             await loadHidden();
+            if (mode === 'register') guideFlag('pending');
             if (location.hash && location.hash !== '#/') route();
             else location.hash = '#/auction';
+            maybeShowGuide();
           } catch (ex) {
             err.textContent = ex.message;
           } finally {
@@ -1571,6 +1642,7 @@
         state.user = me.user;
         await loadHidden();
         route();
+        maybeShowGuide();
       } else renderAuth();
     } catch (_) {
       $app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'card empty' }, h('strong', {}, 'Сервер не отвечает'), 'Проверьте, что BugalterSZ запущен, и обновите страницу.')), siteFooter());
