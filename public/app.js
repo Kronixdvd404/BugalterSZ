@@ -311,11 +311,12 @@
           h(
             'div',
             { class: 'topbar-in' },
-            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ')), h('div', { class: 'brand-icons' }, headerIcon('support', 'Поддержка', 'support', 'Поддержка'))),
+            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ'))),
             tabs,
             h(
               'div',
               { class: 'user' },
+              h('div', { class: 'brand-icons' }, headerIcon('support', 'Поддержка', 'support', 'Поддержка')),
               h('button', { class: 'user-nick', type: 'button', title: 'Мой аккаунт', 'aria-label': 'Мой аккаунт: ' + state.user.nick, onclick: () => (location.hash = '#/account') }, icon('user'), h('span', {}, state.user.nick)),
               h(
                 'button',

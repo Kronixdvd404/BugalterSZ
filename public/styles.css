@@ -564,6 +564,9 @@ body.guide-open { overflow: hidden; }
 @media (max-width: 760px) { .foot-donate .pop { left: 0; right: auto; } }
 @media (max-width: 520px) {
   .brand .logo { font-size: 21px; }
-  .brand .top-icon.pill { width: 36px; padding: 0; justify-content: center; }
-  .brand .top-icon.pill .pill-text { display: none; }
+  .user .top-icon.pill { width: 36px; padding: 0; justify-content: center; }
+  .user .top-icon.pill .pill-text { display: none; }
 }
+
+/* «Поддержка» стоит справа рядом с аккаунтом: окошко раскрывается влево */
+.user .brand-icons .pop { left: auto; right: 0; }
