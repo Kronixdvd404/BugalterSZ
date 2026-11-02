@@ -218,7 +218,7 @@
   }
 
     /** Значок в шапке: «Поддержка» открывает окошко с почтой, остальные открывают ссылку из LINKS (или показывают подсказку, пока ссылки нет). */
-  function headerIcon(name, label, linkKey) {
+  function headerIcon(name, label, linkKey, text) {
     let tip = null;
     let box = null;
     const closeBox = () => {
@@ -267,7 +267,7 @@
     const btn = h(
       'button',
       {
-        class: 'top-icon',
+        class: text ? 'top-icon pill' : 'top-icon',
         type: 'button',
         title: label,
         'aria-label': label,
@@ -283,7 +283,8 @@
           }, 2600);
         }
       },
-      icon(name)
+      icon(name),
+      text ? h('span', { class: 'pill-text' }, text) : null
     );
     return btn;
   }
@@ -310,7 +311,7 @@
           h(
             'div',
             { class: 'topbar-in' },
-            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ')), h('div', { class: 'brand-icons' }, headerIcon('donate', 'Поддержать автора', 'donate'), headerIcon('support', 'Поддержка', 'support'))),
+            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ')), h('div', { class: 'brand-icons' }, headerIcon('support', 'Поддержка', 'support', 'Поддержка'))),
             tabs,
             h(
               'div',
@@ -413,6 +414,7 @@
         h(
           'div',
           { class: 'foot-right' },
+          h('span', { class: 'foot-donate' }, headerIcon('donate', 'Пожертвовать', 'donate', 'Пожертвовать')),
           h('a', { class: 'foot-discord', href: SITE.discord, target: '_blank', rel: 'noopener noreferrer', title: 'Наш Discord-сервер', 'aria-label': 'Discord-сервер' }, h('span', { class: 'foot-discord-ico', 'aria-hidden': 'true' })),
           h('span', { class: 'foot-dev' }, 'Разработчик: ', h('b', {}, SITE.developer))
         )
@@ -474,8 +476,8 @@
         h('p', {}, 'Ознакомьтесь перед использованием сервиса ', logoText(), ':'),
         h('ul', {}, h('li', {}, h('a', { href: '/privacy', target: '_blank', rel: 'noopener' }, 'Политика конфиденциальности')), h('li', {}, h('a', { href: '/terms', target: '_blank', rel: 'noopener' }, 'Пользовательское соглашение')))
       ),
-      h('p', { class: 'guide-note' }, 'Перейдите в Discord по иконке внизу сайта, если нуждаетесь в услугах перевода валюты'),
-      h('p', { class: 'guide-note' }, 'Если хотите поддержать проект, все реквизиты по кнопке слева сверху. Спасибо!')
+      h('p', { class: 'guide-note' }, 'Перейдите в Discord по иконке внизу сайта, если нуждаетесь в особых услугах, связанных с внутриигровой валютой ;)'),
+      h('p', { class: 'guide-note' }, 'Если хотите поддержать проект, все реквизиты по кнопке «Пожертвовать» внизу сайта. Спасибо!')
     );
 
     const panel = h('div', { class: 'guide', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'guide-title' }, body, h('div', { class: 'guide-foot' }, ok));
