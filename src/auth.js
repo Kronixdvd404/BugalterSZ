@@ -51,18 +51,43 @@ export async function startSession(db, user, secure) {
 
 export async function endSession(db, request, secure) {
   const token = parseCookies(request.headers.get('cookie'))[COOKIE];
-  if (token) await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
+  if (token) {
+    const hash = await sha256Hex(token);
+    sessionCache.delete(hash);
+    await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(hash).run();
+  }
   return cookieHeader('', 0, secure);
 }
 
-export async function userFromRequest(db, request) {
+// Короткий кэш проверки сессии в памяти: без него каждый запрос страницы (опрос ленты и т.п.) читает базу ради куки.
+// Если сервер запущен в нескольких экземплярах (Cloudflare), у каждого свой кэш; после выхода из аккаунта
+// чужой экземпляр может принять старую куку до SESSION_CACHE_MS, но сама кука у пользователя уже стёрта.
+const SESSION_CACHE_MS = 30 * 1000;
+const sessionCache = new Map();
+
+/** fresh = true читает базу в обход кэша (нужно там, где важен актуальный ledger_start). */
+export async function userFromRequest(db, request, { fresh = false } = {}) {
   const token = parseCookies(request.headers.get('cookie'))[COOKIE];
   if (!token) return null;
+  const hash = await sha256Hex(token);
+  const now = Date.now();
+  if (!fresh) {
+    const hit = sessionCache.get(hash);
+    if (hit && hit.until > now && hit.exp > now) return { ...hit.user };
+    if (hit) sessionCache.delete(hash);
+  }
   const row = await db
-    .prepare('SELECT u.id, u.nick, u.ledger_start FROM sessions s JOIN users u ON u.id = s.uid WHERE s.token_hash = ? AND s.exp > ?')
-    .bind(await sha256Hex(token), Date.now())
+    .prepare('SELECT u.id, u.nick, u.ledger_start, s.exp AS sess_exp FROM sessions s JOIN users u ON u.id = s.uid WHERE s.token_hash = ? AND s.exp > ?')
+    .bind(hash, now)
     .first();
-  return row || null;
+  if (!row) {
+    sessionCache.delete(hash);
+    return null;
+  }
+  const { sess_exp: exp, ...user } = row;
+  if (sessionCache.size > 500) sessionCache.clear();
+  sessionCache.set(hash, { user, exp: Number(exp) || 0, until: now + SESSION_CACHE_MS });
+  return { ...user };
 }
 
 /** 10 попыток входа/регистрации в минуту с одного IP. */

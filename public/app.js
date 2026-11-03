@@ -633,6 +633,7 @@
     /* --- статус сканера --- */
     const statusEl = top.querySelector('#status');
     async function refreshStatus() {
+      if (document.hidden) return; // скрытая вкладка не опрашивает сервер
       try {
         const s = await api('/auction/status');
         const demo = s.mode === 'demo';
@@ -647,20 +648,41 @@
     interval(refreshStatus, 15000);
 
     /* --- сканер: на Cloudflare нет фонового процесса, поэтому шаг сканирования запускает открытая страница --- */
-    let ticking = false;
-    async function runTick() {
-      if (document.hidden || ticking || state.serverScan) return;
-      ticking = true;
+    // Тики шлёт одна вкладка на браузер (остальные ждут), а если сервер отвечает «занято», пауза растёт: 3, 5, 7, 9 с.
+    // Так сотня открытых страниц не бомбит сервер запросами, а скорость сканирования у одного пользователя прежняя.
+    const TAB_ID = Math.random().toString(36).slice(2);
+    const LEADER_KEY = 'bsz_tick_leader';
+    function isTickLeader() {
       try {
-        const r = await api('/auction/tick', { method: 'POST', body: {} });
-        if (r && r.background) state.serverScan = true; // сервер сканирует сам, вкладке тики не нужны
-      } catch (_) {
-      } finally {
-        ticking = false;
+        const now = Date.now();
+        const cur = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null');
+        if (cur && cur.id !== TAB_ID && now - cur.t < 20000) return false;
+        localStorage.setItem(LEADER_KEY, JSON.stringify({ id: TAB_ID, t: now }));
+      } catch (_) {}
+      return true;
+    }
+    let ticking = false;
+    let tickSkips = 0;
+    let tickTimer = null;
+    async function runTick() {
+      let next = 3000;
+      if (!document.hidden && !ticking && !state.serverScan && isTickLeader()) {
+        ticking = true;
+        try {
+          const r = await api('/auction/tick', { method: 'POST', body: {} });
+          if (r && r.background) state.serverScan = true; // сервер сканирует сам, вкладке тики не нужны
+          tickSkips = r && r.skipped ? tickSkips + 1 : 0;
+        } catch (_) {
+          tickSkips += 1;
+        } finally {
+          ticking = false;
+        }
+        next = [3000, 5000, 7000, 9000][Math.min(tickSkips, 3)];
       }
+      if (!state.serverScan) tickTimer = setTimeout(runTick, next + Math.random() * 500);
     }
     runTick();
-    interval(runTick, 3000);
+    onLeave(() => clearTimeout(tickTimer));
 
     /* --- поиск --- */
     let searchTimer = null;
@@ -789,7 +811,7 @@
       }
       loadFeed(true);
       loadDeals();
-      feedTimer = setInterval(() => loadFeed(false), 6000);
+      feedTimer = setInterval(() => loadFeed(false), 10000);
       dealsTimer = setInterval(loadDeals, 20000);
       // Пока лента пустая — чаще проверяем, чтобы подхватить первые лоты.
       const warm = setInterval(() => {
@@ -800,6 +822,15 @@
         }
       }, 2500);
       onLeave(() => clearInterval(warm));
+      // Когда вкладка снова становится видимой, сразу обновляем данные, не дожидаясь следующего тика.
+      const onShow = () => {
+        if (document.hidden || view.open) return;
+        loadFeed(false);
+        loadDeals();
+        refreshStatus();
+      };
+      document.addEventListener('visibilitychange', onShow);
+      onLeave(() => document.removeEventListener('visibilitychange', onShow));
     }
 
     function dealCard(l, onOpen) {

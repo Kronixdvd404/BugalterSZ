@@ -474,7 +474,8 @@ export async function handle(request, env) {
     const m = path.match(match.re);
     const params = Object.fromEntries(match.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
     const config = getConfig(env);
-    const user = await userFromRequest(env.DB, request);
+    // Бухгалтер зависит от ledger_start, который можно изменить в другом экземпляре, поэтому там кэш сессии не используем.
+    const user = await userFromRequest(env.DB, request, { fresh: path.startsWith('/api/ledger') });
     if (match.auth && !user) throw new HttpError('Нужно войти', 401);
 
     return await match.handler({
