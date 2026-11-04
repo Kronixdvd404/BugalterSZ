@@ -299,7 +299,7 @@
 
   /* ===================== настройки: язык и дизайн ===================== */
 
-  const THEMES = [['acid', 'Зеленый', '#c8ff2e'], ['cherry', 'Красный', '#ff4d5e'], ['lemon', 'Желтый', '#ffe94a'], ['orange', 'Оранжевый', '#ff8a1f'], ['bw', 'Чёрно-белый', '#f2f2f2']];
+  const THEMES = [['acid', 'Кисель', '#c8ff2e'], ['cherry', 'Студень', '#ff4d5e'], ['lemon', 'Жарка', '#ffe94a'], ['orange', 'Карусель', '#ff8a1f'], ['bw', 'ЧБ', '#f2f2f2']];
   const THEME_BG = { acid: '#080a09', cherry: '#0b0809', lemon: '#0a0a07', orange: '#0b0907', bw: '#000000' };
   const getTheme = () => document.documentElement.getAttribute('data-theme') || 'acid';
   function setTheme(k) {
