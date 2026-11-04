@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const { parseMoney, formatMoney, formatSigned, formatShort } = window.Money;
+  const { parseMoney, formatMoney, formatSigned, formatShort: formatShortRu } = window.Money;
+  const t = window.I18N.t;
+  const formatShort = (n) => { const s = formatShortRu(n); return window.I18N.lang === 'en' ? s.replace(/ккк/, 'B').replace(/кк/, 'M').replace(/к/, 'K').replace(',', '.') : s; };
   const $app = document.getElementById('app');
 
   /* ===================== утилиты ===================== */
@@ -45,6 +47,7 @@
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     eye: '<path d="M2.5 12C3.5 10.2 7 6 12 6s8.5 4.2 9.5 6c-1 1.8-4.5 6-9.5 6s-8.5-4.2-9.5-6z"/><circle cx="12" cy="12" r="3"/>',
     eyeoff: '<path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4.2 9.5 6-.4.7-1.2 1.8-2.4 2.9M6.6 7.7C4.7 9.100 3.300 10.900 2.500 12c1 1.800 4.500 6 9.500 6 1.400 0 2.700-.3 3.800-.9M9.900 10a3 3 0 0 0 4.100 4.100"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'
   };
   function icon(name, cls) {
@@ -63,15 +66,17 @@
 
   const rub = (n) => formatMoney(n) + ' ₽';
   const pad = (n) => String(n).padStart(2, '0');
-  const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const months = () => (window.I18N.lang === 'en' ? MONTHS_EN : MONTHS_RU);
 
   function ago(ts) {
     if (!ts) return '';
     const s = Math.max(0, (Date.now() - ts) / 1000);
-    if (s < 45) return 'только что';
-    if (s < 3600) return Math.round(s / 60) + ' мин назад';
-    if (s < 86400) return Math.floor(s / 3600) + ' ч назад';
-    return Math.floor(s / 86400) + ' д назад';
+    if (s < 45) return t('только что');
+    if (s < 3600) return Math.round(s / 60) + t(' мин назад');
+    if (s < 86400) return Math.floor(s / 3600) + t(' ч назад');
+    return Math.floor(s / 86400) + t(' д назад');
   }
   const dayKey = (ts) => {
     const d = new Date(ts);
@@ -80,9 +85,9 @@
   function dayLabel(ts) {
     const d = new Date(ts);
     const today = new Date();
-    if (dayKey(ts) === dayKey(today)) return 'Сегодня';
-    if (dayKey(ts) === dayKey(today.getTime() - 86400000)) return 'Вчера';
-    return d.getDate() + ' ' + MONTHS[d.getMonth()] + (d.getFullYear() !== today.getFullYear() ? ' ' + d.getFullYear() : '');
+    if (dayKey(ts) === dayKey(today)) return t('Сегодня');
+    if (dayKey(ts) === dayKey(today.getTime() - 86400000)) return t('Вчера');
+    return d.getDate() + ' ' + months()[d.getMonth()] + (d.getFullYear() !== today.getFullYear() ? ' ' + d.getFullYear() : '');
   }
   const clock = (ts) => {
     const d = new Date(ts);
@@ -91,15 +96,17 @@
 
   // Дни бухгалтерии считаются по UTC+3 (в 00:00 по UTC+3 день закрывается и уходит в архив).
   const TZ3 = 3 * 3600 * 1000;
-  const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  const WEEKDAYS_RU = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weekdays = () => (window.I18N.lang === 'en' ? WEEKDAYS_EN : WEEKDAYS_RU);
   function fmtDay(ts) {
     const d = new Date(ts + TZ3);
     const year = d.getUTCFullYear() !== new Date(Date.now() + TZ3).getUTCFullYear() ? ' ' + d.getUTCFullYear() : '';
-    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + year + ', ' + WEEKDAYS[d.getUTCDay()];
+    return d.getUTCDate() + ' ' + months()[d.getUTCMonth()] + year + ', ' + weekdays()[d.getUTCDay()];
   }
   function fmtDateTime(ts) {
     const d = new Date(ts);
-    return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(ts);
+    return d.getDate() + ' ' + months()[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(ts);
   }
 
   // Ссылки для значков в шапке. Пока пусто: по нажатию показывается подсказка «скоро».
@@ -127,11 +134,11 @@
       data = await res.json();
     } catch (_) {}
     if (!res.ok) {
-      const err = new Error((data && data.error) || 'Ошибка ' + res.status);
+      const err = new Error(t((data && data.error) || 'Ошибка ' + res.status));
       err.status = res.status;
       if (res.status === 401 && state.user) {
         state.user = null;
-        renderAuth('Сессия закончилась. Войдите снова.');
+        renderAuth(t('Сессия закончилась. Войдите снова.'));
       }
       throw err;
     }
@@ -139,7 +146,7 @@
   }
 
   /** Кнопка с двойным нажатием вместо всплывающего окна подтверждения. */
-  function deleteButton(onConfirm, { label = 'Удалить' } = {}) {
+  function deleteButton(onConfirm, { label = t('Удалить') } = {}) {
     let timer = null;
     const btn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': label });
     const reset = () => {
@@ -152,7 +159,7 @@
       e.stopPropagation();
       if (!timer) {
         btn.className = 'icon-btn danger-confirm';
-        btn.textContent = 'Точно удалить?';
+        btn.textContent = t('Точно удалить?');
         timer = setTimeout(() => {
           timer = null;
           reset();
@@ -232,33 +239,33 @@
     // Почта: не через window.open('mailto:'), иначе без почтовой программы открывается пустая вкладка с вечной загрузкой.
     function openSupport() {
       if (box) return closeBox();
-      const copy = h('button', { class: 'btn small', type: 'button' }, 'Скопировать адрес');
+      const copy = h('button', { class: 'btn small', type: 'button' }, t('Скопировать адрес'));
       copy.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(SUPPORT.email);
-          copy.textContent = 'Скопировано';
+          copy.textContent = t('Скопировано');
         } catch (_) {
           const r = document.createRange();
           r.selectNodeContents(addr);
           const sel = window.getSelection();
           sel.removeAllRanges();
           sel.addRange(r);
-          copy.textContent = 'Выделено, нажмите Ctrl+C';
+          copy.textContent = t('Выделено, нажмите Ctrl+C');
         }
       });
       const addr = h('div', { class: 'pop-mail num' }, SUPPORT.email);
-      const gmail = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(SUPPORT.email) + '&su=' + encodeURIComponent(SUPPORT.subject);
+      const gmail = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(SUPPORT.email) + '&su=' + encodeURIComponent(t(SUPPORT.subject));
       box = h(
         'div',
         { class: 'pop pop-support', role: 'dialog', 'aria-label': label },
-        h('div', { class: 'pop-title' }, 'Написать в поддержку'),
+        h('div', { class: 'pop-title' }, t('Написать в поддержку')),
         addr,
         h(
           'div',
           { class: 'pop-actions' },
           copy,
-          h('a', { class: 'btn small', href: gmail, target: '_blank', rel: 'noopener noreferrer' }, 'Открыть Gmail'),
-          h('a', { class: 'btn ghost small', href: 'mailto:' + SUPPORT.email + '?subject=' + encodeURIComponent(SUPPORT.subject) }, 'Почтовая программа')
+          h('a', { class: 'btn small', href: gmail, target: '_blank', rel: 'noopener noreferrer' }, t('Открыть Gmail')),
+          h('a', { class: 'btn ghost small', href: 'mailto:' + SUPPORT.email + '?subject=' + encodeURIComponent(t(SUPPORT.subject)) }, t('Почтовая программа'))
         )
       );
       btn.parentNode.append(box);
@@ -275,7 +282,7 @@
           if (linkKey === 'support') return openSupport();
           if (LINKS[linkKey]) return window.open(LINKS[linkKey], '_blank', 'noopener');
           if (tip) return;
-          tip = h('div', { class: 'pop', role: 'status' }, label + ': ссылка появится позже');
+          tip = h('div', { class: 'pop', role: 'status' }, label + t(': ссылка появится позже'));
           btn.parentNode.append(tip);
           setTimeout(() => {
             tip.remove();
@@ -289,13 +296,88 @@
     return btn;
   }
 
+
+  /* ===================== настройки: язык и дизайн ===================== */
+
+  const THEMES = [['acid', 'Кислота', '#c8ff2e'], ['cherry', 'Черри', '#ff4d5e'], ['lemon', 'Лимон', '#ffe94a'], ['orange', 'Оранж', '#ff8a1f'], ['bw', 'ЧБ', '#f2f2f2']];
+  const THEME_BG = { acid: '#080a09', cherry: '#0b0809', lemon: '#0a0a07', orange: '#0b0907', bw: '#000000' };
+  const getTheme = () => document.documentElement.getAttribute('data-theme') || 'acid';
+  function setTheme(k) {
+    document.documentElement.setAttribute('data-theme', k);
+    try { localStorage.setItem('bsz_theme', k); } catch (_) {}
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', THEME_BG[k] || THEME_BG.acid);
+  }
+  function applyDocTitle() {
+    document.title = window.I18N.lang === 'en' ? 'BugalterSZ — STALZONE auction, money tracking and notes' : 'BugalterSZ — аукцион STALZONE, учёт денег и заметки';
+  }
+  let reopenSettings = false;
+  function setLang(l) {
+    window.I18N.set(l);
+    applyDocTitle();
+    reopenSettings = true;
+    if (state.user) {
+      shell = null;
+      route();
+    } else renderAuth();
+  }
+
+  /** Шестерёнка с маленьким окошком: язык и цветовая тема. */
+  function settingsButton() {
+    let box = null;
+    const close = () => {
+      if (box) box.remove();
+      box = null;
+      document.removeEventListener('click', outside, true);
+    };
+    function outside(e) {
+      if (box && !box.contains(e.target) && !btn.contains(e.target)) close();
+    }
+    function build() {
+      const langs = h('div', { class: 'seg', role: 'group', 'aria-label': t('Язык') }, ['ru', 'en'].map((l) => h('button', { type: 'button', 'aria-pressed': String(window.I18N.lang === l), onclick: () => window.I18N.lang !== l && setLang(l) }, l === 'ru' ? 'RU' : 'ENG')));
+      const grid = h('div', { class: 'theme-grid', role: 'group', 'aria-label': t('Дизайн') });
+      for (const [k, label, color] of THEMES) {
+        grid.append(
+          h('button', {
+            class: 'theme-opt', type: 'button', 'data-k': k, 'aria-pressed': String(getTheme() === k),
+            onclick: () => {
+              setTheme(k);
+              for (const b of grid.children) b.setAttribute('aria-pressed', String(b.getAttribute('data-k') === k));
+            }
+          }, h('i', { class: 'swatch', style: { background: color } }), t(label))
+        );
+      }
+      return h('div', { class: 'pop pop-settings', role: 'dialog', 'aria-label': t('Настройки') },
+        h('div', { class: 'pop-title' }, t('Настройки')),
+        h('div', { class: 'set-row' }, h('span', { class: 'set-label' }, t('Язык')), langs),
+        h('div', { class: 'set-col' }, h('span', { class: 'set-label' }, t('Дизайн')), grid));
+    }
+    const btn = h('button', {
+      class: 'top-icon', type: 'button', title: t('Настройки'), 'aria-label': t('Настройки'),
+      onclick: () => {
+        if (box) return close();
+        box = build();
+        btn.parentNode.append(box);
+        setTimeout(() => document.addEventListener('click', outside, true), 0);
+      }
+    }, icon('gear'));
+    if (reopenSettings) {
+      reopenSettings = false;
+      setTimeout(() => btn.click(), 0);
+    }
+    return btn;
+  }
+  setTheme(getTheme());
+  applyDocTitle();
+
   let shell = null;
   function renderShell() {
-    const tabs = h('nav', { class: 'tabs', 'aria-label': 'Разделы' });
+    const tabs = h('nav', { class: 'tabs', 'aria-label': t('Разделы') });
     const ind = h('span', { class: 'tab-ind' });
     tabs.append(ind);
     const buttons = {};
-    for (const [key, label] of TABS) {
+    for (const [key, rawLabel] of TABS) {
+      const label = t(rawLabel);
       const b = h('button', { class: 'tab', type: 'button', onclick: () => (location.hash = '#/' + key) }, icon(key), label);
       buttons[key] = b;
       tabs.append(b);
@@ -311,20 +393,20 @@
           h(
             'div',
             { class: 'topbar-in' },
-            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': 'BugalterSZ, на главную' }, 'Bugalter', h('b', {}, 'SZ'))),
+            h('div', { class: 'brand' }, h('a', { class: 'logo', href: '#/auction', 'aria-label': t('BugalterSZ, на главную') }, 'Bugalter', h('b', {}, 'SZ'))),
             tabs,
             h(
               'div',
               { class: 'user' },
-              h('div', { class: 'brand-icons' }, headerIcon('support', 'Поддержка', 'support', 'Поддержка')),
-              h('button', { class: 'user-nick', type: 'button', title: 'Мой аккаунт', 'aria-label': 'Мой аккаунт: ' + state.user.nick, onclick: () => (location.hash = '#/account') }, icon('user'), h('span', {}, state.user.nick)),
+              h('div', { class: 'brand-icons' }, settingsButton(), headerIcon('support', t('Поддержка'), 'support', t('Поддержка'))),
+              h('button', { class: 'user-nick', type: 'button', title: t('Мой аккаунт'), 'aria-label': t('Мой аккаунт: ') + state.user.nick, onclick: () => (location.hash = '#/account') }, icon('user'), h('span', {}, state.user.nick)),
               h(
                 'button',
                 {
                   class: 'icon-btn',
                   type: 'button',
-                  title: 'Выйти',
-                  'aria-label': 'Выйти',
+                  title: t('Выйти'),
+                  'aria-label': t('Выйти'),
                   onclick: async () => {
                     try {
                       await api('/auth/logout', { method: 'POST', body: {} });
@@ -408,16 +490,16 @@
           h('a', { class: 'foot-brand', href: '/', 'aria-label': SITE.name }, 'Bugalter', h('b', {}, 'SZ')),
           h('span', { class: 'foot-copy' }, '© ' + SITE.year + ' All rights reserved'),
           dot(),
-          h('a', { class: 'foot-link', href: '/privacy' }, 'Политика конфиденциальности'),
+          h('a', { class: 'foot-link', href: '/privacy' }, t('Политика конфиденциальности')),
           dot(),
-          h('a', { class: 'foot-link', href: '/terms' }, 'Пользовательское соглашение')
+          h('a', { class: 'foot-link', href: '/terms' }, t('Пользовательское соглашение'))
         ),
         h(
           'div',
           { class: 'foot-right' },
-          h('span', { class: 'foot-donate' }, headerIcon('donate', 'Пожертвовать', 'donate', 'Пожертвовать')),
-          h('a', { class: 'foot-discord', href: SITE.discord, target: '_blank', rel: 'noopener noreferrer', title: 'Наш Discord-сервер', 'aria-label': 'Discord-сервер' }, h('span', { class: 'foot-discord-ico', 'aria-hidden': 'true' })),
-          h('span', { class: 'foot-dev' }, 'Разработчик: ', h('b', {}, SITE.developer))
+          h('span', { class: 'foot-donate' }, headerIcon('donate', t('Пожертвовать'), 'donate', t('Пожертвовать'))),
+          h('a', { class: 'foot-discord', href: SITE.discord, target: '_blank', rel: 'noopener noreferrer', title: t('Наш Discord-сервер'), 'aria-label': t('Discord-сервер') }, h('span', { class: 'foot-discord-ico', 'aria-hidden': 'true' })),
+          h('span', { class: 'foot-dev' }, t('Разработчик: '), h('b', {}, SITE.developer))
         )
       )
     );
@@ -451,7 +533,7 @@
       root.classList.remove('open');
       setTimeout(() => root.remove(), 220);
     };
-    const ok = h('button', { class: 'btn wide', type: 'button', onclick: close }, 'Я ознакомился');
+    const ok = h('button', { class: 'btn wide', type: 'button', onclick: close }, t('Я ознакомился'));
     const trap = (e) => {
       if (e.key === 'Tab') {
         const f = [...root.querySelectorAll('a[href], button')];
@@ -464,21 +546,21 @@
     const body = h(
       'div',
       { class: 'guide-body' },
-      h('h2', { class: 'guide-title', id: 'guide-title' }, 'Гайд по ', logoText()),
-      h('p', { class: 'guide-lead' }, 'Основные функции сайта'),
-      feature('auction', 'Аукцион', 'Удобный интерфейс отображает новые лоты, выставленные на аукцион в двух регионах: RU и EU, а также выгодные предложения, цена которых существенно ниже рынка. Вы можете найти любой внутриигровой предмет в поиске и просмотреть историю его цен.'),
-      feature('ledger', 'Бухгалтер', 'Ваш личный помощник для подсчёта доходов и расходов: введите стартовую сумму и следите за своими финансовыми операциями. Смотрите итоги дня по кнопке, а по окончании дня все ваши операции заносятся в личный архив.'),
-      feature('notes', 'Заметки', 'Простой блокнот, встроенный в сайт: оставляйте себе напоминания, записывайте цели и всё, что душе угодно.'),
-      h('section', { class: 'guide-item' }, h('div', { class: 'guide-ico' }, h('img', { src: '/favicon.svg', alt: '', width: 26, height: 26 })), h('p', { class: 'guide-plain' }, 'Нажмите на свой никнейм, чтобы попасть в личный кабинет и просмотреть необходимую информацию, а также оформить платную подписку на расширенные функции.')),
+      h('h2', { class: 'guide-title', id: 'guide-title' }, t('Гайд по '), logoText()),
+      h('p', { class: 'guide-lead' }, t('Основные функции сайта')),
+      feature('auction', t('Аукцион'), t('Удобный интерфейс отображает новые лоты, выставленные на аукцион в двух регионах: RU и EU, а также выгодные предложения, цена которых существенно ниже рынка. Вы можете найти любой внутриигровой предмет в поиске и просмотреть историю его цен.')),
+      feature('ledger', t('Бухгалтер'), t('Ваш личный помощник для подсчёта доходов и расходов: введите стартовую сумму и следите за своими финансовыми операциями. Смотрите итоги дня по кнопке, а по окончании дня все ваши операции заносятся в личный архив.')),
+      feature('notes', t('Заметки'), t('Простой блокнот, встроенный в сайт: оставляйте себе напоминания, записывайте цели и всё, что душе угодно.')),
+      h('section', { class: 'guide-item' }, h('div', { class: 'guide-ico' }, h('span', { class: 'guide-fav', 'aria-hidden': 'true' })), h('p', { class: 'guide-plain' }, t('Нажмите на свой никнейм, чтобы попасть в личный кабинет и просмотреть необходимую информацию, а также оформить платную подписку на расширенные функции.'))),
       h(
         'section',
         { class: 'guide-important' },
-        h('h3', {}, 'Важно!'),
-        h('p', {}, 'Ознакомьтесь перед использованием сервиса ', logoText(), ':'),
-        h('ul', {}, h('li', {}, h('a', { href: '/privacy', target: '_blank', rel: 'noopener' }, 'Политика конфиденциальности')), h('li', {}, h('a', { href: '/terms', target: '_blank', rel: 'noopener' }, 'Пользовательское соглашение')))
+        h('h3', {}, t('Важно!')),
+        h('p', {}, t('Ознакомьтесь перед использованием сервиса '), logoText(), ':'),
+        h('ul', {}, h('li', {}, h('a', { href: '/privacy', target: '_blank', rel: 'noopener' }, t('Политика конфиденциальности'))), h('li', {}, h('a', { href: '/terms', target: '_blank', rel: 'noopener' }, t('Пользовательское соглашение'))))
       ),
-      h('p', { class: 'guide-note' }, 'Перейдите в Discord по иконке внизу сайта, если нуждаетесь в особых услугах, связанных с внутриигровой валютой ;)'),
-      h('p', { class: 'guide-note' }, 'Если хотите поддержать проект, все реквизиты по кнопке «Пожертвовать» внизу сайта. Спасибо!')
+      h('p', { class: 'guide-note' }, t('Перейдите в Discord по иконке внизу сайта, если нуждаетесь в особых услугах, связанных с внутриигровой валютой ;)')),
+      h('p', { class: 'guide-note' }, t('Если хотите поддержать проект, все реквизиты по кнопке «Пожертвовать» внизу сайта. Спасибо!'))
     );
 
     const panel = h('div', { class: 'guide', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'guide-title' }, body, h('div', { class: 'guide-foot' }, ok));
@@ -499,19 +581,19 @@
     shell = null;
     let mode = 'login';
     const err = h('div', { class: 'auth-err', role: 'alert' }, message || '');
-    const nick = h('input', { class: 'input', id: 'nick', autocomplete: 'username', placeholder: 'Например, Stalker_77', maxlength: 20, required: true });
-    const pass = h('input', { class: 'input', id: 'pass', type: 'password', autocomplete: 'current-password', placeholder: 'Не короче 6 символов', required: true });
-    const submit = h('button', { class: 'btn wide', type: 'submit' }, 'Войти');
-    const seg = h('div', { class: 'seg full', role: 'group', 'aria-label': 'Режим' });
-    const bLogin = h('button', { type: 'button', 'aria-pressed': 'true', onclick: () => setMode('login') }, 'Вход');
-    const bReg = h('button', { type: 'button', 'aria-pressed': 'false', onclick: () => setMode('register') }, 'Регистрация');
+    const nick = h('input', { class: 'input', id: 'nick', autocomplete: 'username', placeholder: t('Например, Stalker_77'), maxlength: 20, required: true });
+    const pass = h('input', { class: 'input', id: 'pass', type: 'password', autocomplete: 'current-password', placeholder: t('Не короче 6 символов'), required: true });
+    const submit = h('button', { class: 'btn wide', type: 'submit' }, t('Войти'));
+    const seg = h('div', { class: 'seg full', role: 'group', 'aria-label': t('Режим') });
+    const bLogin = h('button', { type: 'button', 'aria-pressed': 'true', onclick: () => setMode('login') }, t('Вход'));
+    const bReg = h('button', { type: 'button', 'aria-pressed': 'false', onclick: () => setMode('register') }, t('Регистрация'));
     seg.append(bLogin, bReg);
 
     function setMode(m) {
       mode = m;
       bLogin.setAttribute('aria-pressed', String(m === 'login'));
       bReg.setAttribute('aria-pressed', String(m === 'register'));
-      submit.textContent = m === 'login' ? 'Войти' : 'Создать аккаунт';
+      submit.textContent = m === 'login' ? t('Войти') : t('Создать аккаунт');
       pass.setAttribute('autocomplete', m === 'login' ? 'current-password' : 'new-password');
       err.textContent = '';
     }
@@ -540,8 +622,8 @@
         }
       },
       seg,
-      h('div', { class: 'field' }, h('label', { for: 'nick' }, 'Ник'), nick),
-      h('div', { class: 'field' }, h('label', { for: 'pass' }, 'Пароль'), pass),
+      h('div', { class: 'field' }, h('label', { for: 'nick' }, t('Ник')), nick),
+      h('div', { class: 'field' }, h('label', { for: 'pass' }, t('Пароль')), pass),
       err,
       submit
     );
@@ -550,10 +632,11 @@
       h(
         'div',
         { class: 'auth-wrap' },
+        h('div', { class: 'auth-settings' }, settingsButton()),
         h(
           'div',
           { class: 'auth-card' },
-          h('div', { class: 'auth-logo' }, h('div', { class: 'logo' }, 'Bugalter', h('b', {}, 'SZ')), h('p', { class: 'sub' }, 'Аукцион, учёт денег и заметки в одном месте')),
+          h('div', { class: 'auth-logo' }, h('div', { class: 'logo' }, 'Bugalter', h('b', {}, 'SZ')), h('p', { class: 'sub' }, t('Аукцион, учёт денег и заметки в одном месте'))),
           form
         )
       ),
@@ -567,7 +650,7 @@
   function qualityBits(l) {
     const out = [];
     if (l.mod) out.push(h('span', { class: 'tag mod' }, '«' + l.mod + '»')); // оружейный модуль: название идёт первым
-    if (l.qlt !== null && l.qlt !== undefined && QLT[l.qlt]) out.push(h('span', { class: 'q', style: { color: QLT[l.qlt][1] } }, QLT[l.qlt][0]));
+    if (l.qlt !== null && l.qlt !== undefined && QLT[l.qlt]) out.push(h('span', { class: 'q', style: { color: QLT[l.qlt][1] } }, t(QLT[l.qlt][0])));
     // заточка показывается всегда, даже +0: от неё сильно зависит цена
     if (l.ptn !== null && l.ptn !== undefined && (l.qlt !== null || l.ptn > 0)) out.push(h('span', { class: 'tag' }, '+' + l.ptn));
     return out;
@@ -576,7 +659,7 @@
   /** «Редкий +5»: с чем именно сравнивалась цена лота. */
   function basisLabel(b) {
     if (!b) return '';
-    const q = b.qlt !== null && b.qlt !== undefined && QLT[b.qlt] ? QLT[b.qlt][0] : '';
+    const q = b.qlt !== null && b.qlt !== undefined && QLT[b.qlt] ? t(QLT[b.qlt][0]) : '';
     let p = '';
     if (b.ptn !== null && b.ptn !== undefined) p = b.exact ? '+' + b.ptn : '+' + b.ptnFrom + '…+' + b.ptn;
     const qp = (q + ' ' + p).trim();
@@ -585,7 +668,7 @@
   function refTitle(ref) {
     if (!ref) return '';
     const label = basisLabel(ref.basis);
-    return 'Медиана продаж' + (label ? ' (' + label + ')' : '') + ': ' + rub(ref.median) + ', продаж в выборке: ' + ref.samples + (ref.basis && ref.basis.exact === false ? '. Точных продаж мало, взяты соседние заточки ниже.' : '');
+    return t('Медиана продаж') + (label ? ' (' + label + ')' : '') + ': ' + rub(ref.median) + t(', продаж в выборке: ') + ref.samples + (ref.basis && ref.basis.exact === false ? t('. Точных продаж мало, взяты соседние заточки ниже.') : '');
   }
 
   function lotRow(l, { onOpen, showName = true, fresh = false } = {}) {
@@ -594,7 +677,7 @@
       'div',
       { class: 'lot-main' },
       h('div', { class: 'lot-name' }, showName ? h('span', { class: 'nm' }, l.name) : null, h('span', { class: 'tag region' }, l.region.toUpperCase()), qualityBits(l)),
-      h('div', { class: 'lot-meta' }, l.amount > 1 ? h('span', {}, '×' + formatMoney(l.amount)) : null, h('span', {}, ago(l.startTime)), !hasBuyout ? h('span', {}, 'только ставки') : null)
+      h('div', { class: 'lot-meta' }, l.amount > 1 ? h('span', {}, '×' + formatMoney(l.amount)) : null, h('span', {}, ago(l.startTime)), !hasBuyout ? h('span', {}, t('только ставки')) : null)
     );
     const disc = l.deal ? l.deal.discount : l.discount;
     const badge =
@@ -604,8 +687,8 @@
     const price = h(
       'div',
       { class: 'lot-price' },
-      h('div', { class: 'price num' }, hasBuyout ? rub(l.buyoutPrice) : h('span', {}, rub(l.currentPrice), ' ', h('small', {}, 'ставка'))),
-      hasBuyout && l.amount > 1 ? h('div', { class: 'unit num' }, rub(l.unit) + ' за шт.') : null,
+      h('div', { class: 'price num' }, hasBuyout ? rub(l.buyoutPrice) : h('span', {}, rub(l.currentPrice), ' ', h('small', {}, t('ставка')))),
+      hasBuyout && l.amount > 1 ? h('div', { class: 'unit num' }, rub(l.unit) + t(' за шт.')) : null,
       badge
     );
     const tag = onOpen ? 'button' : 'div';
@@ -613,8 +696,8 @@
   }
 
   function regionSeg(value, onChange, { all = true } = {}) {
-    const box = h('div', { class: 'seg', role: 'group', 'aria-label': 'Регион' });
-    const opts = [...(all ? [['all', 'Все']] : []), ...state.regions.map((r) => [r, r.toUpperCase()])];
+    const box = h('div', { class: 'seg', role: 'group', 'aria-label': t('Регион') });
+    const opts = [...(all ? [['all', t('Все')]] : []), ...state.regions.map((r) => [r, r.toUpperCase()])];
     for (const [v, label] of opts) {
       box.append(h('button', { type: 'button', 'aria-pressed': String(v === value), onclick: () => onChange(v) }, label));
     }
@@ -623,8 +706,8 @@
 
   function viewAuction(root) {
     const view = { region: state.region, lastSeq: 0, open: null };
-    const top = h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Аукцион'), h('div', { id: 'status' }));
-    const input = h('input', { class: 'input', type: 'search', placeholder: 'Найти предмет: АК-74, Душа, аптечка…', autocomplete: 'off', 'aria-label': 'Поиск предмета' });
+    const top = h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, t('Аукцион')), h('div', { id: 'status' }));
+    const input = h('input', { class: 'input', type: 'search', placeholder: t('Найти предмет: АК-74, Душа, аптечка…'), autocomplete: 'off', 'aria-label': t('Поиск предмета') });
     const searchbox = h('div', { class: 'searchbox' }, icon('search'), input);
     const results = h('div', { class: 'card results hidden' });
     const body = h('div', { class: 'page' });
@@ -638,7 +721,7 @@
         const s = await api('/auction/status');
         const demo = s.mode === 'demo';
         statusEl.replaceChildren(
-          h('span', { class: 'status-pill' + (demo ? ' demo' : ''), title: demo ? s.demoReason : s.lastError || '' }, h('i'), demo ? 'Демо-данные' : 'Live · ' + s.regions.map((r) => r.toUpperCase()).join(' + '))
+          h('span', { class: 'status-pill' + (demo ? ' demo' : ''), title: demo ? s.demoReason : s.lastError || '' }, h('i'), demo ? t('Демо-данные') : 'Live · ' + s.regions.map((r) => r.toUpperCase()).join(' + '))
         );
         state.demo = demo;
         view.status = s;
@@ -697,7 +780,7 @@
           const r = await api('/auction/search?q=' + encodeURIComponent(q));
           if (my !== searchSeq) return;
           results.replaceChildren();
-          if (!r.items.length) results.append(h('div', { class: 'empty' }, h('strong', {}, 'Ничего не нашлось'), 'Проверьте название: поиск идёт по русским названиям предметов.'));
+          if (!r.items.length) results.append(h('div', { class: 'empty' }, h('strong', {}, t('Ничего не нашлось')), t('Проверьте название: поиск идёт по русским названиям предметов.')));
           for (const it of r.items) {
             results.append(
               h(
@@ -751,11 +834,11 @@
         h(
           'div',
           { class: 'empty' },
-          h('strong', {}, 'Лента пока пуста'),
-          view.status && view.status.mode === 'live' ? 'Сканер просматривает аукцион (' + Math.round((view.status.progress || 0) * 100) + '% круга). Он работает, пока эта страница открыта; новые лоты появятся здесь по мере обнаружения.' : 'Сканер запускается, подождите несколько секунд.'
+          h('strong', {}, t('Лента пока пуста')),
+          view.status && view.status.mode === 'live' ? t('Сканер просматривает аукцион (') + Math.round((view.status.progress || 0) * 100) + t('% круга). Он работает, пока эта страница открыта; новые лоты появятся здесь по мере обнаружения.') : t('Сканер запускается, подождите несколько секунд.')
         );
       feedList.append(feedEmpty());
-      const dealsEmpty = h('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, h('strong', {}, 'Подходящих лотов пока нет'), 'Для сравнения нужна история продаж того же качества и заточки. Лоты появятся по мере сканирования, пока страница открыта.');
+      const dealsEmpty = h('div', { class: 'card empty', style: { gridColumn: '1 / -1' } }, h('strong', {}, t('Подходящих лотов пока нет')), t('Для сравнения нужна история продаж того же качества и заточки. Лоты появятся по мере сканирования, пока страница открыта.'));
       dealsBox.append(dealsEmpty);
 
       const regionBar = regionSeg(view.region, (v) => {
@@ -767,13 +850,13 @@
         h(
           'section',
           { class: 'section' },
-          h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, h('span', { class: 'live-dot' }), 'Новые лоты'), regionBar),
+          h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, h('span', { class: 'live-dot' }), t('Новые лоты')), regionBar),
           feedList
         ),
         h(
           'section',
           { class: 'section' },
-          h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, 'Выгодные лоты'), h('span', { class: 'sub' }, 'Ниже медианы продаж того же качества и той же заточки')),
+          h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, t('Выгодные лоты')), h('span', { class: 'sub' }, t('Ниже медианы продаж того же качества и той же заточки'))),
           dealsBox
         )
       );
@@ -841,8 +924,8 @@
         h(
           'div',
           { class: 'deal-bottom' },
-          h('div', {}, h('div', { class: 'deal-price num' }, rub(l.buyoutPrice)), h('div', { class: 'deal-note num' }, 'медиана ' + rub(l.deal.median) + (l.amount > 1 ? ' за шт.' : '')), basisLabel(l.deal.basis) ? h('div', { class: 'deal-basis num' }, 'для «' + basisLabel(l.deal.basis) + '», ' + l.deal.samples + ' прод.') : null),
-          h('div', { class: 'deal-note', style: { textAlign: 'right' } }, 'выгода ' + formatShort(l.deal.savings) + ' ₽', h('br'), ago(l.startTime))
+          h('div', {}, h('div', { class: 'deal-price num' }, rub(l.buyoutPrice)), h('div', { class: 'deal-note num' }, t('медиана ') + rub(l.deal.median) + (l.amount > 1 ? t(' за шт.') : '')), basisLabel(l.deal.basis) ? h('div', { class: 'deal-basis num' }, t('для «') + basisLabel(l.deal.basis) + '», ' + l.deal.samples + t(' прод.')) : null),
+          h('div', { class: 'deal-note', style: { textAlign: 'right' } }, t('выгода ') + formatShort(l.deal.savings) + ' ₽', h('br'), ago(l.startTime))
         )
       );
     }
@@ -865,7 +948,7 @@
           if (initial) holder.replaceChildren(backButton(), h('div', { class: 'toast-err' }, ex.message));
         }
       }
-      const backButton = () => h('button', { class: 'btn ghost small', type: 'button', onclick: showHome, style: { justifySelf: 'start' } }, icon('back'), 'К ленте');
+      const backButton = () => h('button', { class: 'btn ghost small', type: 'button', onclick: showHome, style: { justifySelf: 'start' } }, icon('back'), t('К ленте'));
 
       // Выбранные фильтры живут вне itemPanel: страница перерисовывается каждые 20 секунд.
       const sel = { mod: 'all', qlt: 'all', ptn: 'all' };
@@ -910,31 +993,31 @@
         // Медиана выбранной группы: у предметов с качеством она считается только по продажам того же качества и заточки.
         let medVal = null;
         let medNote = '';
-        if (isMod && sel.mod === 'all') medNote = 'выберите модуль';
+        if (isMod && sel.mod === 'all') medNote = t('выберите модуль');
         else if (!d.hasQuality) {
           if (isMod) {
             const g = d.groups.find((x) => x[4] === sel.mod);
             if (g) {
               medVal = g[2];
-              medNote = g[3] + ' продаж';
-            } else medNote = 'нет продаж';
+              medNote = g[3] + t(' продаж');
+            } else medNote = t('нет продаж');
           } else if (s) {
             medVal = s.median;
-            medNote = s.samples + ' продаж';
+            medNote = s.samples + t(' продаж');
           }
-        } else if (!filtered) medNote = 'выберите качество';
+        } else if (!filtered) medNote = t('выберите качество');
         else if (sel.ptn !== 'all') {
           const g = d.groups.find((x) => x[0] === sel.qlt && x[1] === sel.ptn && modOk(x[4]) && (!isMod || x[4] === sel.mod));
           if (g) {
             medVal = g[2];
-            medNote = g[3] + ' продаж';
-          } else medNote = 'нет продаж такой заточки';
+            medNote = g[3] + t(' продаж');
+          } else medNote = t('нет продаж такой заточки');
         } else {
           const pts = d.history.filter((p) => p[2] === sel.qlt && modOk(p[4]));
           if (pts.length) {
             medVal = medianOf(pts.map((p) => p[1]));
-            medNote = 'любая заточка, выберите точную';
-          } else medNote = 'нет продаж';
+            medNote = t('любая заточка, выберите точную');
+          } else medNote = t('нет продаж');
         }
 
         const nodes = [
@@ -947,7 +1030,7 @@
             h(
               'div',
               { style: { marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' } },
-              h('button', { class: 'btn ghost small', type: 'button', onclick: toggleHide, title: 'Скрытый предмет не показывается в новых и выгодных лотах, но находится поиском' }, icon(state.hidden.has(id) ? 'eye' : 'eyeoff'), state.hidden.has(id) ? 'Вернуть в ленту' : 'Скрыть из ленты'),
+              h('button', { class: 'btn ghost small', type: 'button', onclick: toggleHide, title: t('Скрытый предмет не показывается в новых и выгодных лотах, но находится поиском') }, icon(state.hidden.has(id) ? 'eye' : 'eyeoff'), state.hidden.has(id) ? t('Вернуть в ленту') : t('Скрыть из ленты')),
               regionSeg(region, (v) => openItem(id, v), { all: false })
             )
           )
@@ -970,7 +1053,7 @@
               },
               label
             );
-          nodes.push(h('div', { class: 'filters', role: 'group', 'aria-label': 'Модуль' }, h('span', { class: 'filter-label' }, 'Модуль'), mchip('all', 'Все'), modsPresent.map((m) => mchip(m, '«' + m + '»'))));
+          nodes.push(h('div', { class: 'filters', role: 'group', 'aria-label': t('Модуль') }, h('span', { class: 'filter-label' }, t('Модуль')), mchip('all', t('Все')), modsPresent.map((m) => mchip(m, '«' + m + '»'))));
         }
 
         if (qltsPresent.length) {
@@ -990,19 +1073,19 @@
               color ? h('i', { class: 'dot', style: { color } }) : null,
               label
             );
-          const bar = h('div', { class: 'filters', role: 'group', 'aria-label': 'Качество' }, chip('all', 'Любое'), qltsPresent.map((q) => chip(q, QLT[q] ? QLT[q][0] : 'Качество ' + q, QLT[q] && QLT[q][1])));
+          const bar = h('div', { class: 'filters', role: 'group', 'aria-label': t('Качество') }, chip('all', t('Любое')), qltsPresent.map((q) => chip(q, QLT[q] ? t(QLT[q][0]) : t('Качество ') + q, QLT[q] && QLT[q][1])));
           if (filtered) {
             const pick = h(
               'select',
               {
                 class: 'select',
-                'aria-label': 'Заточка',
+                'aria-label': t('Заточка'),
                 onchange: (e) => {
                   sel.ptn = e.target.value === 'all' ? 'all' : Number(e.target.value);
                   rerender();
                 }
               },
-              h('option', { value: 'all' }, 'Любая заточка'),
+              h('option', { value: 'all' }, t('Любая заточка')),
               ptnsPresent.map((p) => h('option', { value: String(p) }, '+' + p))
             );
             pick.value = String(sel.ptn);
@@ -1015,9 +1098,9 @@
           h(
             'div',
             { class: 'stats' },
-            h('div', { class: 'card stat' }, h('span', { class: 'k' }, 'Медиана продаж'), h('span', { class: 'v num' }, medVal ? rub(medVal) : '—'), medNote ? h('span', { class: 's' }, medNote) : null),
-            h('div', { class: 'card stat' }, h('span', { class: 'k' }, 'Дешевле всего сейчас'), h('span', { class: 'v num' }, minNow ? rub(minNow) : '—'), filtered ? h('span', { class: 's' }, 'с этим качеством' + (sel.ptn !== 'all' ? ' и заточкой' : '')) : null),
-            h('div', { class: 'card stat' }, h('span', { class: 'k' }, 'Лотов на аукционе'), h('span', { class: 'v num' }, formatMoney(d.total)), filtered ? h('span', { class: 's' }, lots.length + ' по фильтру') : null)
+            h('div', { class: 'card stat' }, h('span', { class: 'k' }, t('Медиана продаж')), h('span', { class: 'v num' }, medVal ? rub(medVal) : '—'), medNote ? h('span', { class: 's' }, medNote) : null),
+            h('div', { class: 'card stat' }, h('span', { class: 'k' }, t('Дешевле всего сейчас')), h('span', { class: 'v num' }, minNow ? rub(minNow) : '—'), filtered ? h('span', { class: 's' }, t('с этим качеством') + (sel.ptn !== 'all' ? t(' и заточкой') : '')) : null),
+            h('div', { class: 'card stat' }, h('span', { class: 'k' }, t('Лотов на аукционе')), h('span', { class: 'v num' }, formatMoney(d.total)), filtered ? h('span', { class: 's' }, lots.length + t(' по фильтру')) : null)
           )
         );
 
@@ -1029,16 +1112,16 @@
           h(
             'section',
             { class: 'section' },
-            h('h2', { class: 'section-title' }, isMod ? 'Лоты по модулям: название, затем качество' : 'Лоты, сначала дешёвые'),
+            h('h2', { class: 'section-title' }, isMod ? t('Лоты по модулям: название, затем качество') : t('Лоты, сначала дешёвые')),
             lots.length
               ? h('div', { class: 'card lots' }, lots.slice(0, 60).map((l) => lotRow(l, { showName: false })))
-              : h('div', { class: 'card empty' }, h('strong', {}, filtered ? 'Нет лотов с такими параметрами' : 'Сейчас лотов нет'), filtered ? 'Среди самых дешёвых лотов нет такого качества и заточки. Попробуйте другое.' : 'Предмет никто не продаёт в этом регионе.')
+              : h('div', { class: 'card empty' }, h('strong', {}, filtered ? t('Нет лотов с такими параметрами') : t('Сейчас лотов нет')), filtered ? t('Среди самых дешёвых лотов нет такого качества и заточки. Попробуйте другое.') : t('Предмет никто не продаёт в этом регионе.'))
           )
         );
         return nodes;
       }
 
-      holder.append(backButton(), h('div', { class: 'card empty' }, 'Загружаю…'));
+      holder.append(backButton(), h('div', { class: 'card empty' }, t('Загружаю…')));
       load(true);
       const t = setInterval(() => load(false), 20000);
       onLeave(() => clearInterval(t));
@@ -1062,16 +1145,16 @@
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('preserveAspectRatio', 'none');
     svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'График цен последних продаж');
+    svg.setAttribute('aria-label', t('График цен последних продаж'));
     svg.innerHTML =
-      '<defs><linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#c8ff2e"/><stop offset="1" stop-color="#1fff8f"/></linearGradient>' +
-      '<linearGradient id="sf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6dff5c" stop-opacity=".22"/><stop offset="1" stop-color="#6dff5c" stop-opacity="0"/></linearGradient></defs>' +
+      '<defs><linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--acid-1)"/><stop offset="1" style="stop-color:var(--acid-2)"/></linearGradient>' +
+      '<linearGradient id="sf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--acid-1)" stop-opacity=".22"/><stop offset="1" style="stop-color:var(--acid-1)" stop-opacity="0"/></linearGradient></defs>' +
       `<path d="${line} L${W} ${H} L0 ${H} Z" fill="url(#sf)"/>` +
       `<path d="${line}" fill="none" stroke="url(#sl)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
     const first = points[0][0];
     const last = points[points.length - 1][0];
     const days = Math.max(1, Math.round((last - first) / 86400000));
-    return h('div', { class: 'card chart' }, h('div', { class: 'chart-foot' }, h('span', {}, 'Цена за штуку в проданных лотах'), h('span', { class: 'num' }, formatShort(min) + ' – ' + formatShort(max) + ' ₽')), svg, h('div', { class: 'chart-foot' }, h('span', {}, 'за ' + days + ' дн.'), h('span', {}, stats ? stats.samples + ' продаж в выборке' : '')));
+    return h('div', { class: 'card chart' }, h('div', { class: 'chart-foot' }, h('span', {}, t('Цена за штуку в проданных лотах')), h('span', { class: 'num' }, formatShort(min) + ' – ' + formatShort(max) + ' ₽')), svg, h('div', { class: 'chart-foot' }, h('span', {}, t('за ') + days + t(' дн.')), h('span', {}, stats ? stats.samples + t(' продаж в выборке') : '')));
   }
 
   /* ===================== вкладка 2: бухгалтер ===================== */
@@ -1088,21 +1171,21 @@
     const page = h('div', { class: 'page' });
     root.append(page);
 
-    const amount = h('input', { class: 'input num', id: 'amount', inputmode: 'text', autocomplete: 'off', placeholder: '10к, 1.5кк, 10000…', 'aria-describedby': 'amount-hint' });
-    const note = h('input', { class: 'input', id: 'note', autocomplete: 'off', maxlength: 120, placeholder: 'За что? (необязательно)' });
-    const hint = h('div', { class: 'hint', id: 'amount-hint', 'aria-live': 'polite' }, 'Можно писать 10к, 10 000, 1,5кк, 2 млн');
-    const submit = h('button', { class: 'btn', type: 'submit' }, icon('plus'), 'Добавить доход');
+    const amount = h('input', { class: 'input num', id: 'amount', inputmode: 'text', autocomplete: 'off', placeholder: t('10к, 1.5кк, 10000…'), 'aria-describedby': 'amount-hint' });
+    const note = h('input', { class: 'input', id: 'note', autocomplete: 'off', maxlength: 120, placeholder: t('За что? (необязательно)') });
+    const hint = h('div', { class: 'hint', id: 'amount-hint', 'aria-live': 'polite' }, t('Можно писать 10к, 10 000, 1,5кк, 2 млн'));
+    const submit = h('button', { class: 'btn', type: 'submit' }, icon('plus'), t('Добавить доход'));
     const formErr = h('div', { class: 'toast-err hidden', role: 'alert' });
 
-    const seg = h('div', { class: 'seg expense', role: 'group', 'aria-label': 'Тип операции' });
-    const bInc = h('button', { type: 'button', class: 'is-income', 'aria-pressed': 'true', onclick: () => setType('income') }, 'Доход');
-    const bExp = h('button', { type: 'button', class: 'is-expense', 'aria-pressed': 'false', onclick: () => setType('expense') }, 'Расход');
+    const seg = h('div', { class: 'seg expense', role: 'group', 'aria-label': t('Тип операции') });
+    const bInc = h('button', { type: 'button', class: 'is-income', 'aria-pressed': 'true', onclick: () => setType('income') }, t('Доход'));
+    const bExp = h('button', { type: 'button', class: 'is-expense', 'aria-pressed': 'false', onclick: () => setType('expense') }, t('Расход'));
     seg.append(bInc, bExp);
     function setType(t) {
       type = t;
       bInc.setAttribute('aria-pressed', String(t === 'income'));
       bExp.setAttribute('aria-pressed', String(t === 'expense'));
-      submit.replaceChildren(icon('plus'), t === 'income' ? 'Добавить доход' : 'Добавить расход');
+      submit.replaceChildren(icon('plus'), t === 'income' ? t('Добавить доход') : t('Добавить расход'));
     }
 
     amount.addEventListener('input', () => {
@@ -1110,7 +1193,7 @@
       formErr.classList.add('hidden');
       if (!v) {
         hint.className = 'hint';
-        hint.textContent = 'Можно писать 10к, 10 000, 1,5кк, 2 млн';
+        hint.textContent = t('Можно писать 10к, 10 000, 1,5кк, 2 млн');
         return;
       }
       const r = parseMoney(v);
@@ -1119,7 +1202,7 @@
         hint.textContent = '= ' + rub(r.value);
       } else {
         hint.className = 'hint err';
-        hint.textContent = r.error;
+        hint.textContent = t(r.error);
       }
     });
 
@@ -1132,7 +1215,7 @@
           const r = parseMoney(amount.value);
           if (!r.ok || r.value === 0) {
             hint.className = 'hint err';
-            hint.textContent = r.ok ? 'Сумма должна быть больше нуля' : r.error;
+            hint.textContent = r.ok ? t('Сумма должна быть больше нуля') : t(r.error);
             amount.focus();
             return;
           }
@@ -1142,7 +1225,7 @@
             amount.value = '';
             note.value = '';
             hint.className = 'hint';
-            hint.textContent = type === 'income' ? 'Доход добавлен' : 'Расход добавлен';
+            hint.textContent = type === 'income' ? t('Доход добавлен') : t('Расход добавлен');
             summary = null;
             await load();
             amount.focus();
@@ -1154,17 +1237,17 @@
           }
         }
       },
-      h('div', { class: 'entry-grid' }, h('div', { class: 'field' }, h('label', { for: 'amount' }, 'Сумма'), amount), h('div', { class: 'field' }, h('label', { for: 'note' }, 'Комментарий'), note)),
+      h('div', { class: 'entry-grid' }, h('div', { class: 'field' }, h('label', { for: 'amount' }, t('Сумма')), amount), h('div', { class: 'field' }, h('label', { for: 'note' }, t('Комментарий')), note)),
       hint,
       formErr,
-      h('div', { class: 'entry-actions' }, seg, h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap' } }, h('button', { class: 'btn ghost', type: 'button', onclick: showSummary }, icon('bolt'), 'Итог дня'), submit))
+      h('div', { class: 'entry-actions' }, seg, h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap' } }, h('button', { class: 'btn ghost', type: 'button', onclick: showSummary }, icon('bolt'), t('Итог дня')), submit))
     );
 
     const balanceBox = h('div', { class: 'card balance-card' });
     const summaryBox = h('div');
     const historyBox = h('div', { class: 'section' });
-    const archiveBtn = h('button', { class: 'btn ghost small', type: 'button', onclick: () => openArchive() }, icon('clock'), 'Архив');
-    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Бухгалтер'), archiveBtn), balanceBox, form, summaryBox, historyBox);
+    const archiveBtn = h('button', { class: 'btn ghost small', type: 'button', onclick: () => openArchive() }, icon('clock'), t('Архив'));
+    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, t('Бухгалтер')), archiveBtn), balanceBox, form, summaryBox, historyBox);
 
     async function load() {
       try {
@@ -1186,12 +1269,12 @@
       const neg = data.balance < 0;
       const startBlock = editingStart
         ? (() => {
-            const inp = h('input', { class: 'input num', value: String(data.start), 'aria-label': 'Стартовый баланс', autocomplete: 'off' });
+            const inp = h('input', { class: 'input num', value: String(data.start), 'aria-label': t('Стартовый баланс'), autocomplete: 'off' });
             const err = h('span', { class: 'hint err' });
             const save = async () => {
               const r = parseMoney(inp.value);
               if (!r.ok) {
-                err.textContent = r.error;
+                err.textContent = t(r.error);
                 return;
               }
               try {
@@ -1214,26 +1297,26 @@
               inp.focus();
               inp.select();
             }, 0);
-            return h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Стартовый баланс'), h('div', { class: 'start-edit' }, inp, h('button', { class: 'btn small', type: 'button', onclick: save }, 'Сохранить'), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Отмена', onclick: () => ((editingStart = false), draw()) }, icon('close'))), err);
+            return h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Стартовый баланс')), h('div', { class: 'start-edit' }, inp, h('button', { class: 'btn small', type: 'button', onclick: save }, t('Сохранить')), h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Отмена'), onclick: () => ((editingStart = false), draw()) }, icon('close'))), err);
           })()
-        : h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Стартовый баланс'), h('div', { class: 'start-edit' }, h('span', { class: 'v num' }, rub(data.start)), h('button', { class: 'btn ghost small', type: 'button', onclick: () => ((editingStart = true), draw()) }, data.entries.length || data.start ? 'Изменить' : 'Указать')));
+        : h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Стартовый баланс')), h('div', { class: 'start-edit' }, h('span', { class: 'v num' }, rub(data.start)), h('button', { class: 'btn ghost small', type: 'button', onclick: () => ((editingStart = true), draw()) }, data.entries.length || data.start ? t('Изменить') : t('Указать'))));
 
       balanceBox.replaceChildren(
-        h('div', {}, h('div', { class: 'balance-label' }, 'Баланс сейчас'), h('div', { class: 'balance num' + (neg ? ' neg' : ''), 'aria-live': 'polite' }, formatMoney(data.balance), h('small', {}, '₽'))),
-        h('div', { class: 'balance-row' }, startBlock, h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Доходы сегодня'), h('span', { class: 'v pos num' }, '+' + formatMoney(data.day.income))), h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Расходы сегодня'), h('span', { class: 'v neg num' }, '−' + formatMoney(data.day.expense))))
+        h('div', {}, h('div', { class: 'balance-label' }, t('Баланс сейчас')), h('div', { class: 'balance num' + (neg ? ' neg' : ''), 'aria-live': 'polite' }, formatMoney(data.balance), h('small', {}, '₽'))),
+        h('div', { class: 'balance-row' }, startBlock, h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Доходы сегодня')), h('span', { class: 'v pos num' }, '+' + formatMoney(data.day.income))), h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Расходы сегодня')), h('span', { class: 'v neg num' }, '−' + formatMoney(data.day.expense))))
       );
     }
 
     function drawHistory() {
       historyBox.replaceChildren();
       const closeAt = clock(data.day.to);
-      historyBox.append(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, 'Операции за сегодня'), h('span', { class: 'sub' }, 'День закрывается в 00:00 по UTC+3 (у вас в ' + closeAt + '), после этого операции уходят в архив')));
+      historyBox.append(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, t('Операции за сегодня')), h('span', { class: 'sub' }, t('День закрывается в 00:00 по UTC+3 (у вас в ') + closeAt + t('), после этого операции уходят в архив'))));
       if (!data.entries.length) {
-        historyBox.append(h('div', { class: 'card empty' }, h('strong', {}, 'Сегодня операций нет'), 'Введите сумму выше и нажмите «Добавить доход» или «Добавить расход». Прошлые дни лежат в архиве.'));
+        historyBox.append(h('div', { class: 'card empty' }, h('strong', {}, t('Сегодня операций нет')), t('Введите сумму выше и нажмите «Добавить доход» или «Добавить расход». Прошлые дни лежат в архиве.')));
         return;
       }
       const card = h('div', { class: 'card' });
-      card.append(h('div', { class: 'day-label' }, 'Сегодня, ' + fmtDay(data.day.from)));
+      card.append(h('div', { class: 'day-label' }, t('Сегодня, ') + fmtDay(data.day.from)));
       for (const e of data.entries.slice(0, shown)) {
         const inc = e.type === 'income';
         card.append(
@@ -1241,7 +1324,7 @@
             'div',
             { class: 'entry' },
             h('div', { class: 'sign' + (inc ? '' : ' out') }, inc ? '+' : '−'),
-            h('div', { class: 'entry-note' }, e.note || (inc ? 'Доход' : 'Расход')),
+            h('div', { class: 'entry-note' }, e.note || (inc ? t('Доход') : t('Расход'))),
             h('div', { class: 'entry-time num' }, clock(e.ts)),
             h('div', { class: 'entry-sum num ' + (inc ? 'pos' : 'neg') }, (inc ? '+' : '−') + formatMoney(e.amount)),
             deleteButton(async () => {
@@ -1268,7 +1351,7 @@
                 drawHistory();
               }
             },
-            'Показать ещё'
+            t('Показать ещё')
           )
         );
       }
@@ -1278,27 +1361,27 @@
       summaryBox.replaceChildren();
       if (!summary) return;
       const s = summary;
-      const verdictText = s.verdict === 'plus' ? 'День в плюсе' : s.verdict === 'minus' ? 'День в минусе' : 'День в нуле';
+      const verdictText = s.verdict === 'plus' ? t('День в плюсе') : s.verdict === 'minus' ? t('День в минусе') : t('День в нуле');
       const parts = [];
       if (!s.incomeCount && !s.expenseCount) {
-        parts.push(h('span', {}, 'Сегодня операций ещё не было.'));
+        parts.push(h('span', {}, t('Сегодня операций ещё не было.')));
       } else {
-        parts.push(h('span', {}, 'Заработано ', h('b', { class: 'num' }, rub(s.earned)), s.incomeCount ? ` (${s.incomeCount} ${plural(s.incomeCount, 'операция', 'операции', 'операций')})` : '', ', потрачено ', h('b', { class: 'num' }, rub(s.spent)), s.expenseCount ? ` (${s.expenseCount} ${plural(s.expenseCount, 'операция', 'операции', 'операций')})` : '', '. '));
-        if (s.topIncome) parts.push(h('span', {}, 'Крупнейший доход: ', h('b', { class: 'num' }, rub(s.topIncome.amount)), s.topIncome.note ? ' (' + s.topIncome.note + ')' : '', '. '));
-        if (s.topExpense) parts.push(h('span', {}, 'Крупнейший расход: ', h('b', { class: 'num' }, rub(s.topExpense.amount)), s.topExpense.note ? ' (' + s.topExpense.note + ')' : '', '.'));
+        parts.push(h('span', {}, t('Заработано '), h('b', { class: 'num' }, rub(s.earned)), s.incomeCount ? ` (${s.incomeCount} ${plural(s.incomeCount, t('операция'), t('операции'), t('операций'))})` : '', t(', потрачено '), h('b', { class: 'num' }, rub(s.spent)), s.expenseCount ? ` (${s.expenseCount} ${plural(s.expenseCount, t('операция'), t('операции'), t('операций'))})` : '', '. '));
+        if (s.topIncome) parts.push(h('span', {}, t('Крупнейший доход: '), h('b', { class: 'num' }, rub(s.topIncome.amount)), s.topIncome.note ? ' (' + s.topIncome.note + ')' : '', '. '));
+        if (s.topExpense) parts.push(h('span', {}, t('Крупнейший расход: '), h('b', { class: 'num' }, rub(s.topExpense.amount)), s.topExpense.note ? ' (' + s.topExpense.note + ')' : '', '.'));
       }
       summaryBox.append(
         h(
           'section',
-          { class: 'summary' + (s.verdict === 'minus' ? ' minus' : ''), 'aria-label': 'Итог дня' },
-          h('div', { class: 'summary-head' }, h('div', {}, h('div', { class: 'sub' }, 'Итог за сегодня, ' + fmtDay(s.from)), h('div', { class: 'summary-verdict num' }, verdictText + ': ' + formatSigned(s.net) + ' ₽')), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Закрыть итог', onclick: () => ((summary = null), drawSummary()) }, icon('close'))),
+          { class: 'summary' + (s.verdict === 'minus' ? ' minus' : ''), 'aria-label': t('Итог дня') },
+          h('div', { class: 'summary-head' }, h('div', {}, h('div', { class: 'sub' }, t('Итог за сегодня, ') + fmtDay(s.from)), h('div', { class: 'summary-verdict num' }, verdictText + ': ' + formatSigned(s.net) + ' ₽')), h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Закрыть итог'), onclick: () => ((summary = null), drawSummary()) }, icon('close'))),
           h(
             'div',
             { class: 'summary-grid' },
-            h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Заработано'), h('span', { class: 'v pos num' }, '+' + formatMoney(s.earned))),
-            h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Убытки'), h('span', { class: 'v neg num' }, '−' + formatMoney(s.spent))),
-            h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Баланс утром'), h('span', { class: 'v num' }, rub(s.balanceStart))),
-            h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Баланс сейчас'), h('span', { class: 'v num ' + (s.balanceEnd >= 0 ? 'pos' : 'neg') }, rub(s.balanceEnd)))
+            h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Заработано')), h('span', { class: 'v pos num' }, '+' + formatMoney(s.earned))),
+            h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Убытки')), h('span', { class: 'v neg num' }, '−' + formatMoney(s.spent))),
+            h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Баланс утром')), h('span', { class: 'v num' }, rub(s.balanceStart))),
+            h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Баланс сейчас')), h('span', { class: 'v num ' + (s.balanceEnd >= 0 ? 'pos' : 'neg') }, rub(s.balanceEnd)))
           ),
           h('p', { class: 'summary-text' }, parts)
         )
@@ -1325,7 +1408,7 @@
     /* --- архив: панель слева, как история в браузере --- */
     function entryRow(e) {
       const inc = e.type === 'income';
-      return h('div', { class: 'entry' }, h('div', { class: 'sign' + (inc ? '' : ' out') }, inc ? '+' : '−'), h('div', { class: 'entry-note' }, e.note || (inc ? 'Доход' : 'Расход')), h('div', { class: 'entry-time num' }, clock(e.ts)), h('div', { class: 'entry-sum num ' + (inc ? 'pos' : 'neg') }, (inc ? '+' : '−') + formatMoney(e.amount)));
+      return h('div', { class: 'entry' }, h('div', { class: 'sign' + (inc ? '' : ' out') }, inc ? '+' : '−'), h('div', { class: 'entry-note' }, e.note || (inc ? t('Доход') : t('Расход'))), h('div', { class: 'entry-time num' }, clock(e.ts)), h('div', { class: 'entry-sum num ' + (inc ? 'pos' : 'neg') }, (inc ? '+' : '−') + formatMoney(e.amount)));
     }
 
     function closeArchive() {
@@ -1341,14 +1424,14 @@
     async function showDays() {
       if (!drawer) return;
       const { body, title } = drawer;
-      title.textContent = 'Архив';
-      body.replaceChildren(h('div', { class: 'sub' }, 'Загружаю…'));
+      title.textContent = t('Архив');
+      body.replaceChildren(h('div', { class: 'sub' }, t('Загружаю…')));
       try {
         const r = await api('/ledger/archive');
         if (!drawer) return;
-        body.replaceChildren(h('p', { class: 'sub drawer-note' }, 'Дни закрываются в 00:00 по UTC+3. Операции в архиве можно только смотреть.'));
+        body.replaceChildren(h('p', { class: 'sub drawer-note' }, t('Дни закрываются в 00:00 по UTC+3. Операции в архиве можно только смотреть.')));
         if (!r.days.length) {
-          body.append(h('div', { class: 'card empty' }, h('strong', {}, 'Архив пока пуст'), 'Сегодняшние операции попадут сюда после 00:00 по UTC+3.'));
+          body.append(h('div', { class: 'card empty' }, h('strong', {}, t('Архив пока пуст')), t('Сегодняшние операции попадут сюда после 00:00 по UTC+3.')));
           return;
         }
         for (const d of r.days) {
@@ -1356,7 +1439,7 @@
             h(
               'button',
               { class: 'day-row', type: 'button', onclick: () => showDay(d) },
-              h('div', {}, h('div', { class: 'day-date' }, fmtDay(d.day)), h('div', { class: 'sub' }, d.count + ' ' + plural(d.count, 'операция', 'операции', 'операций'))),
+              h('div', {}, h('div', { class: 'day-date' }, fmtDay(d.day)), h('div', { class: 'sub' }, d.count + ' ' + plural(d.count, t('операция'), t('операции'), t('операций')))),
               h('div', { class: 'day-net num ' + (d.net > 0 ? 'pos' : d.net < 0 ? 'neg' : '') }, formatSigned(d.net) + ' ₽'),
               icon('chev')
             )
@@ -1371,22 +1454,22 @@
       if (!drawer) return;
       const { body, title } = drawer;
       title.textContent = fmtDay(d.day);
-      const back = h('button', { class: 'btn ghost small', type: 'button', style: { justifySelf: 'start' }, onclick: showDays }, icon('back'), 'Все дни');
-      body.replaceChildren(back, h('div', { class: 'sub' }, 'Загружаю…'));
+      const back = h('button', { class: 'btn ghost small', type: 'button', style: { justifySelf: 'start' }, onclick: showDays }, icon('back'), t('Все дни'));
+      body.replaceChildren(back, h('div', { class: 'sub' }, t('Загружаю…')));
       try {
         const r = await api('/ledger/archive/' + d.day);
         if (!drawer) return;
         const grid = h(
           'div',
           { class: 'summary-grid drawer-grid' },
-          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Заработано'), h('span', { class: 'v pos num' }, '+' + formatMoney(r.earned))),
-          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Убытки'), h('span', { class: 'v neg num' }, '−' + formatMoney(r.spent))),
-          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Итог дня'), h('span', { class: 'v num ' + (r.net >= 0 ? 'pos' : 'neg') }, formatSigned(r.net) + ' ₽')),
-          h('div', { class: 'mini' }, h('span', { class: 'k' }, 'Баланс на конец дня'), h('span', { class: 'v num ' + (d.balanceEnd >= 0 ? 'pos' : 'neg') }, rub(d.balanceEnd)))
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Заработано')), h('span', { class: 'v pos num' }, '+' + formatMoney(r.earned))),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Убытки')), h('span', { class: 'v neg num' }, '−' + formatMoney(r.spent))),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Итог дня')), h('span', { class: 'v num ' + (r.net >= 0 ? 'pos' : 'neg') }, formatSigned(r.net) + ' ₽')),
+          h('div', { class: 'mini' }, h('span', { class: 'k' }, t('Баланс на конец дня')), h('span', { class: 'v num ' + (d.balanceEnd >= 0 ? 'pos' : 'neg') }, rub(d.balanceEnd)))
         );
         const list = h('div', { class: 'card' });
         for (const e of r.entries) list.append(entryRow(e));
-        if (!r.entries.length) list.append(h('div', { class: 'empty' }, 'В этот день операций не было.'));
+        if (!r.entries.length) list.append(h('div', { class: 'empty' }, t('В этот день операций не было.')));
         body.replaceChildren(back, grid, list);
       } catch (ex) {
         body.replaceChildren(back, h('div', { class: 'toast-err' }, ex.message));
@@ -1396,8 +1479,8 @@
     function openArchive() {
       if (drawer) return;
       const body = h('div', { class: 'drawer-body' });
-      const title = h('h2', { class: 'drawer-title' }, 'Архив');
-      const panel = h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Архив операций' }, h('div', { class: 'drawer-head' }, title, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Закрыть архив', onclick: closeArchive }, icon('close'))), body);
+      const title = h('h2', { class: 'drawer-title' }, t('Архив'));
+      const panel = h('aside', { class: 'drawer', role: 'dialog', 'aria-label': t('Архив операций') }, h('div', { class: 'drawer-head' }, title, h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Закрыть архив'), onclick: closeArchive }, icon('close'))), body);
       const root = h('div', { class: 'drawer-root' }, h('div', { class: 'scrim', onclick: closeArchive }), panel);
       const onKey = (e) => {
         if (e.key === 'Escape') closeArchive();
@@ -1426,7 +1509,7 @@
       }
     });
 
-    balanceBox.append(h('div', { class: 'sub' }, 'Загружаю…'));
+    balanceBox.append(h('div', { class: 'sub' }, t('Загружаю…')));
     load();
   }
 
@@ -1435,8 +1518,8 @@
   function viewAccount(root) {
     const page = h('div', { class: 'page' });
     root.append(page);
-    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Аккаунт')));
-    const card = h('div', { class: 'card account-card' }, h('div', { class: 'sub' }, 'Загружаю…'));
+    page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, t('Аккаунт'))));
+    const card = h('div', { class: 'card account-card' }, h('div', { class: 'sub' }, t('Загружаю…')));
     const hiddenBox = h('section', { class: 'section' });
     page.append(card, hiddenBox);
 
@@ -1448,9 +1531,9 @@
       try {
         const a = await api('/account');
         card.replaceChildren(
-          h('div', { class: 'acc-head' }, h('div', { class: 'avatar', 'aria-hidden': 'true' }, String(a.nick).charAt(0).toUpperCase()), h('div', {}, h('div', { class: 'acc-nick' }, a.nick), h('div', { class: 'sub' }, 'Ваш аккаунт'))),
-          h('div', { class: 'acc-rows' }, row('Ник', a.nick), row('Последний вход', a.lastLogin ? fmtDateTime(a.lastLogin) : '—'), row('Регистрация', a.createdAt ? fmtDateTime(a.createdAt) : '—')),
-          h('div', { class: 'acc-sub' }, h('div', {}, h('div', { class: 'acc-sub-title' }, 'Платная подписка'), h('div', { class: 'sub' }, 'Дополнительные возможности появятся позже')), h('button', { class: 'btn', type: 'button', disabled: true, title: 'Пока недоступно' }, icon('lock'), 'Оформить подписку'))
+          h('div', { class: 'acc-head' }, h('div', { class: 'avatar', 'aria-hidden': 'true' }, String(a.nick).charAt(0).toUpperCase()), h('div', {}, h('div', { class: 'acc-nick' }, a.nick), h('div', { class: 'sub' }, t('Ваш аккаунт')))),
+          h('div', { class: 'acc-rows' }, row(t('Ник'), a.nick), row(t('Последний вход'), a.lastLogin ? fmtDateTime(a.lastLogin) : '—'), row(t('Регистрация'), a.createdAt ? fmtDateTime(a.createdAt) : '—')),
+          h('div', { class: 'acc-sub' }, h('div', {}, h('div', { class: 'acc-sub-title' }, t('Платная подписка')), h('div', { class: 'sub' }, t('Дополнительные возможности появятся позже'))), h('button', { class: 'btn', type: 'button', disabled: true, title: t('Пока недоступно') }, icon('lock'), t('Оформить подписку')))
         );
       } catch (ex) {
         card.replaceChildren(h('div', { class: 'toast-err' }, ex.message));
@@ -1459,9 +1542,9 @@
 
     async function drawHidden() {
       const items = await loadHidden();
-      hiddenBox.replaceChildren(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, 'Скрытые предметы'), h('span', { class: 'sub' }, 'Не показываются в новых и выгодных лотах, но находятся поиском')));
+      hiddenBox.replaceChildren(h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, t('Скрытые предметы')), h('span', { class: 'sub' }, t('Не показываются в новых и выгодных лотах, но находятся поиском'))));
       if (!items.length) {
-        hiddenBox.append(h('div', { class: 'card empty' }, h('strong', {}, 'Список пуст'), 'Откройте предмет через поиск и нажмите «Скрыть из ленты», если он вам не нужен.'));
+        hiddenBox.append(h('div', { class: 'card empty' }, h('strong', {}, t('Список пуст')), t('Откройте предмет через поиск и нажмите «Скрыть из ленты», если он вам не нужен.')));
         return;
       }
       const list = h('div', { class: 'card lots' });
@@ -1486,7 +1569,7 @@
                 }
               },
               icon('eye'),
-              'Вернуть'
+              t('Вернуть')
             )
           )
         );
@@ -1497,6 +1580,7 @@
   }
 
   const plural = (n, a, b, c) => {
+    if (window.I18N.lang === 'en') return Number(n) === 1 ? a : b;
     const m10 = n % 10;
     const m100 = n % 100;
     return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c;
@@ -1511,7 +1595,7 @@
   }
   function noteDate(ts) {
     const d = dayLabel(ts);
-    return d === 'Сегодня' ? 'Сегодня ' + clock(ts) : d === 'Вчера' ? 'Вчера' : new Date(ts).getDate() + ' ' + MONTHS[new Date(ts).getMonth()].slice(0, 3) + '.';
+    return d === t('Сегодня') ? t('Сегодня ') + clock(ts) : d === t('Вчера') ? t('Вчера') : new Date(ts).getDate() + ' ' + months()[new Date(ts).getMonth()].slice(0, 3) + '.';
   }
 
   function viewNotes(root) {
@@ -1533,18 +1617,18 @@
         }
       },
       icon('plus'),
-      'Новая заметка'
+      t('Новая заметка')
     );
     const count = h('p', { class: 'sub' });
-    root.append(h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('div', {}, h('h1', { class: 'page-title' }, 'Заметки'), count), addBtn), list));
+    root.append(h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('div', {}, h('h1', { class: 'page-title' }, t('Заметки')), count), addBtn), list));
 
     async function load() {
       try {
         const { notes } = await api('/notes');
-        count.textContent = notes.length ? notes.length + ' ' + plural(notes.length, 'заметка', 'заметки', 'заметок') : '';
+        count.textContent = notes.length ? notes.length + ' ' + plural(notes.length, t('заметка'), t('заметки'), t('заметок')) : '';
         list.replaceChildren();
         if (!notes.length) {
-          list.append(h('div', { class: 'empty' }, h('strong', {}, 'Заметок пока нет'), 'Например: «Цена на Душу скоро вырастет — докупить заранее».'));
+          list.append(h('div', { class: 'empty' }, h('strong', {}, t('Заметок пока нет')), t('Например: «Цена на Душу скоро вырастет — докупить заранее».')));
           return;
         }
         for (const n of notes) {
@@ -1555,7 +1639,7 @@
               h(
                 'button',
                 { class: 'note-row', type: 'button', onclick: () => (location.hash = '#/notes/' + n.id) },
-                h('div', { style: { minWidth: 0 } }, h('div', { class: 'note-title' }, noteTitle(n.text) || 'Пустая заметка'), h('div', { class: 'note-meta' }, h('span', {}, noteDate(n.updatedAt)), notePreview(n.text) || 'Нет дополнительного текста')),
+                h('div', { style: { minWidth: 0 } }, h('div', { class: 'note-title' }, noteTitle(n.text) || t('Пустая заметка')), h('div', { class: 'note-meta' }, h('span', {}, noteDate(n.updatedAt)), notePreview(n.text) || t('Нет дополнительного текста'))),
                 h('div', { class: 'note-actions', style: { width: '40px' } }, icon('chev', 'chev'))
               ),
               h(
@@ -1566,7 +1650,7 @@
                     await api('/notes/' + n.id, { method: 'DELETE' });
                     await load();
                   } catch (_) {}
-                }, { label: 'Удалить заметку' })
+                }, { label: t('Удалить заметку') })
               )
             )
           );
@@ -1579,7 +1663,7 @@
   }
 
   function viewNote(root, id) {
-    const area = h('textarea', { class: 'note-area', placeholder: 'Первая строка станет заголовком. Пишите что угодно.', 'aria-label': 'Текст заметки', spellcheck: 'true' });
+    const area = h('textarea', { class: 'note-area', placeholder: t('Первая строка станет заголовком. Пишите что угодно.'), 'aria-label': t('Текст заметки'), spellcheck: 'true' });
     const saveState = h('span', { class: 'save-state', 'aria-live': 'polite' });
     const dateEl = h('div', { class: 'note-date' });
     let loaded = false;
@@ -1596,16 +1680,16 @@
       clearTimeout(timer);
       if (!loaded || !dirty || gone) return saving;
       dirty = false;
-      saveState.textContent = 'Сохраняю…';
+      saveState.textContent = t('Сохраняю…');
       const text = area.value;
       saving = saving
         .then(() => api('/notes/' + id, { method: 'PUT', body: { text } }))
         .then(() => {
-          saveState.textContent = 'Сохранено';
+          saveState.textContent = t('Сохранено');
         })
         .catch(() => {
           dirty = true;
-          saveState.textContent = 'Не удалось сохранить';
+          saveState.textContent = t('Не удалось сохранить');
         });
       return saving;
     }
@@ -1628,7 +1712,7 @@
       }
       location.hash = '#/notes';
     }
-    const back = h('button', { class: 'back', type: 'button', onclick: leave }, icon('back'), 'Заметки');
+    const back = h('button', { class: 'back', type: 'button', onclick: leave }, icon('back'), t('Заметки'));
     const del = deleteButton(async () => {
       gone = true;
       clearTimeout(timer);
@@ -1636,7 +1720,7 @@
         await api('/notes/' + id, { method: 'DELETE' });
       } catch (_) {}
       location.hash = '#/notes';
-    }, { label: 'Удалить заметку' });
+    }, { label: t('Удалить заметку') });
 
     root.append(h('div', { class: 'note-view' }, h('div', { class: 'note-bar' }, back, dateEl, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'flex-end' } }, saveState, del)), area));
 
@@ -1654,12 +1738,12 @@
         const { note } = await api('/notes/' + id);
         area.value = note.text;
         const d = new Date(note.updatedAt);
-        dateEl.textContent = d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(note.updatedAt);
+        dateEl.textContent = d.getDate() + ' ' + months()[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(note.updatedAt);
         loaded = true;
         fit();
         if (!note.text) area.focus();
       } catch (ex) {
-        root.replaceChildren(h('div', { class: 'page' }, h('button', { class: 'btn ghost small', type: 'button', style: { justifySelf: 'start' }, onclick: () => (location.hash = '#/notes') }, icon('back'), 'К заметкам'), h('div', { class: 'toast-err' }, ex.status === 404 ? 'Эта заметка уже удалена.' : ex.message)));
+        root.replaceChildren(h('div', { class: 'page' }, h('button', { class: 'btn ghost small', type: 'button', style: { justifySelf: 'start' }, onclick: () => (location.hash = '#/notes') }, icon('back'), t('К заметкам')), h('div', { class: 'toast-err' }, ex.status === 404 ? t('Эта заметка уже удалена.') : ex.message)));
       }
     })();
   }
@@ -1679,7 +1763,7 @@
         maybeShowGuide();
       } else renderAuth();
     } catch (_) {
-      $app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'card empty' }, h('strong', {}, 'Сервер не отвечает'), 'Проверьте, что BugalterSZ запущен, и обновите страницу.')), siteFooter());
+      $app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'card empty' }, h('strong', {}, t('Сервер не отвечает')), t('Проверьте, что BugalterSZ запущен, и обновите страницу.'))), siteFooter());
     }
   })();
 })();
