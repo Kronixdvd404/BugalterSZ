@@ -10,14 +10,18 @@ export const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
-  'Cache-Control': 'no-store'
+  'Cache-Control': 'no-store',
+  'Strict-Transport-Security': 'max-age=31536000'
 };
 
 export function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS, ...headers }
-  });
+  const h = new Headers({ 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS });
+  // значение-массив (несколько Set-Cookie) добавляется отдельными заголовками
+  for (const [k, v] of Object.entries(headers)) {
+    if (Array.isArray(v)) v.forEach((x) => h.append(k, x));
+    else h.set(k, v);
+  }
+  return new Response(JSON.stringify(data), { status, headers: h });
 }
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');

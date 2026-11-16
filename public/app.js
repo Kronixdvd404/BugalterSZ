@@ -473,7 +473,7 @@
   /* ===================== подвал сайта ===================== */
 
   // discord: сюда вставь ссылку-приглашение на свой сервер
-  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
+  const SITE = { name: 'BugalterSZ', developer: 'Kronixdvd404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
 
   /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
   function siteFooter() {
@@ -582,7 +582,25 @@
     let mode = 'login';
     const err = h('div', { class: 'auth-err', role: 'alert' }, message || '');
     const nick = h('input', { class: 'input', id: 'nick', autocomplete: 'username', placeholder: t('Например, Stalker_77'), maxlength: 20, required: true });
-    const pass = h('input', { class: 'input', id: 'pass', type: 'password', autocomplete: 'current-password', placeholder: t('Не короче 6 символов'), required: true });
+    const pass = h('input', { class: 'input', id: 'pass', type: 'password', autocomplete: 'current-password', placeholder: t('Ваш пароль'), maxlength: 128, required: true });
+    const pass2 = h('input', { class: 'input', id: 'pass2', type: 'password', autocomplete: 'new-password', placeholder: t('Повторите пароль'), maxlength: 128 });
+    const field2 = h('div', { class: 'field hidden' }, h('label', { for: 'pass2' }, t('Повторите пароль')), pass2);
+    const passHint = h('div', { class: 'hint', 'aria-live': 'polite' });
+    const eye = h(
+      'button',
+      {
+        class: 'pass-toggle',
+        type: 'button',
+        'aria-label': t('Показать пароль'),
+        onclick: () => {
+          const show = pass.type === 'password';
+          pass.type = pass2.type = show ? 'text' : 'password';
+          eye.replaceChildren(icon(show ? 'eyeoff' : 'eye'));
+          eye.setAttribute('aria-label', show ? t('Скрыть пароль') : t('Показать пароль'));
+        }
+      },
+      icon('eye')
+    );
     const submit = h('button', { class: 'btn wide', type: 'submit' }, t('Войти'));
     const seg = h('div', { class: 'seg full', role: 'group', 'aria-label': t('Режим') });
     const bLogin = h('button', { type: 'button', 'aria-pressed': 'true', onclick: () => setMode('login') }, t('Вход'));
@@ -595,6 +613,10 @@
       bReg.setAttribute('aria-pressed', String(m === 'register'));
       submit.textContent = m === 'login' ? t('Войти') : t('Создать аккаунт');
       pass.setAttribute('autocomplete', m === 'login' ? 'current-password' : 'new-password');
+      pass.setAttribute('placeholder', m === 'login' ? t('Ваш пароль') : t('Не короче 10 символов'));
+      field2.classList.toggle('hidden', m === 'login');
+      pass2.required = m === 'register';
+      passHint.textContent = m === 'register' ? t('Лучше длинная фраза: цифры и символы не обязательны. Восстановить пароль нельзя, запомните его.') : '';
       err.textContent = '';
     }
 
@@ -605,6 +627,10 @@
         onsubmit: async (e) => {
           e.preventDefault();
           err.textContent = '';
+          if (mode === 'register') {
+            if (pass.value.length < 10) return void (err.textContent = t('Пароль должен быть не короче 10 символов'));
+            if (pass.value !== pass2.value) return void (err.textContent = t('Пароли не совпадают'));
+          }
           submit.disabled = true;
           try {
             const r = await api('/auth/' + mode, { method: 'POST', body: { nick: nick.value, password: pass.value } });
@@ -623,7 +649,9 @@
       },
       seg,
       h('div', { class: 'field' }, h('label', { for: 'nick' }, t('Ник')), nick),
-      h('div', { class: 'field' }, h('label', { for: 'pass' }, t('Пароль')), pass),
+      h('div', { class: 'field' }, h('label', { for: 'pass' }, t('Пароль')), h('div', { class: 'pass-wrap' }, pass, eye)),
+      field2,
+      passHint,
       err,
       submit
     );
@@ -1522,7 +1550,119 @@
     page.append(h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, t('Аккаунт'))));
     const card = h('div', { class: 'card account-card' }, h('div', { class: 'sub' }, t('Загружаю…')));
     const hiddenBox = h('section', { class: 'section' });
-    page.append(card, hiddenBox);
+    const securityBox = h('section', { class: 'section' });
+    page.append(card, securityBox, hiddenBox);
+
+    function leaveSession() {
+      state.user = null;
+      runCleanups();
+      location.hash = '';
+      renderAuth();
+    }
+
+    /** Безопасность: смена пароля, выход на всех устройствах, удаление аккаунта. */
+    function drawSecurity() {
+      const fld = (id, label, input) => h('div', { class: 'field' }, h('label', { for: id }, t(label)), input);
+      const pw = (id, ac) => h('input', { class: 'input', id, type: 'password', autocomplete: ac, maxlength: 128 });
+      const cur = pw('pw-cur', 'current-password');
+      const nw = pw('pw-new', 'new-password');
+      const nw2 = pw('pw-new2', 'new-password');
+      const msg = h('div', { class: 'hint', 'aria-live': 'polite' });
+      const say = (cls, text) => {
+        msg.className = 'hint' + (cls ? ' ' + cls : '');
+        msg.textContent = text;
+      };
+      const save = h('button', { class: 'btn', type: 'submit' }, t('Сменить пароль'));
+      const form = h(
+        'form',
+        {
+          class: 'sec-form',
+          onsubmit: async (e) => {
+            e.preventDefault();
+            say('', '');
+            if (nw.value.length < 10) return say('err', t('Пароль должен быть не короче 10 символов'));
+            if (nw.value !== nw2.value) return say('err', t('Пароли не совпадают'));
+            save.disabled = true;
+            try {
+              await api('/account/password', { method: 'POST', body: { current: cur.value, next: nw.value } });
+              cur.value = nw.value = nw2.value = '';
+              say('ok', t('Пароль изменён. Остальные сессии закрыты.'));
+            } catch (ex) {
+              say('err', ex.message);
+            } finally {
+              save.disabled = false;
+            }
+          }
+        },
+        h('div', { class: 'acc-sub-title' }, t('Смена пароля')),
+        fld('pw-cur', 'Текущий пароль', cur),
+        fld('pw-new', 'Новый пароль', nw),
+        fld('pw-new2', 'Повторите новый пароль', nw2),
+        msg,
+        save
+      );
+
+      const out = h(
+        'button',
+        {
+          class: 'btn ghost small',
+          type: 'button',
+          onclick: async () => {
+            try {
+              await api('/account/logout-all', { method: 'POST', body: {} });
+              leaveSession();
+            } catch (_) {}
+          }
+        },
+        icon('logout'),
+        t('Выйти на всех устройствах')
+      );
+
+      const delPw = h('input', { class: 'input', id: 'del-pw', type: 'password', autocomplete: 'current-password', maxlength: 128, placeholder: t('Пароль для подтверждения'), 'aria-label': t('Пароль для подтверждения') });
+      const delMsg = h('div', { class: 'hint err', 'aria-live': 'polite' });
+      let armed = null;
+      const delBtn = h(
+        'button',
+        {
+          class: 'btn danger small',
+          type: 'button',
+          onclick: async () => {
+            delMsg.textContent = '';
+            if (!delPw.value) return void (delMsg.textContent = t('Введите пароль'));
+            if (!armed) {
+              delBtn.textContent = t('Точно удалить аккаунт?');
+              armed = setTimeout(() => {
+                armed = null;
+                delBtn.textContent = t('Удалить аккаунт');
+              }, 4000);
+              return;
+            }
+            clearTimeout(armed);
+            armed = null;
+            try {
+              await api('/account', { method: 'DELETE', body: { password: delPw.value } });
+              leaveSession();
+            } catch (ex) {
+              delMsg.textContent = ex.message;
+              delBtn.textContent = t('Удалить аккаунт');
+            }
+          }
+        },
+        t('Удалить аккаунт')
+      );
+
+      securityBox.replaceChildren(
+        h('div', { class: 'section-head' }, h('h2', { class: 'section-title' }, t('Безопасность'))),
+        h(
+          'div',
+          { class: 'card account-card' },
+          form,
+          h('div', { class: 'acc-sub' }, h('div', {}, h('div', { class: 'acc-sub-title' }, t('Сессии')), h('div', { class: 'sub' }, t('Закроет вход на всех устройствах, включая это'))), out),
+          h('div', { class: 'sec-form', style: { paddingTop: '18px', borderTop: '1px solid var(--line)' } }, h('div', { class: 'acc-sub-title' }, t('Удалить аккаунт')), h('div', { class: 'sub' }, t('Удаление необратимо: аккаунт, записи бухгалтера и заметки будут стёрты.')), delPw, delMsg, h('div', {}, delBtn))
+        )
+      );
+    }
+    drawSecurity();
 
     function row(k, v) {
       return h('div', { class: 'acc-row' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));

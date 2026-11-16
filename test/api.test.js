@@ -39,7 +39,7 @@ function createD1() {
   };
 }
 
-const env = { DB: createD1(), DEMO: '1', PBKDF2_ITER: '10000', SCAN_BATCH: '40', FEED_BACKFILL_MIN: '120', DEAL_MIN_SAVINGS: '0' };
+const env = { DB: createD1(), DEMO: '1', HIBP_OFF: '1', PBKDF2_ITER: '10000', SCAN_BATCH: '40', FEED_BACKFILL_MIN: '120', DEAL_MIN_SAVINGS: '0' };
 let cookie = '';
 
 async function call(method, path, body) {
@@ -52,14 +52,14 @@ async function call(method, path, body) {
 
 test('регистрация, вход, выход', async () => {
   assert.equal((await call('GET', '/api/auction/status')).status, 401);
-  const r = await call('POST', '/api/auth/register', { nick: 'Tester', password: 'secret1' });
+  const r = await call('POST', '/api/auth/register', { nick: 'Tester', password: 'correct-horse-9' });
   assert.equal(r.status, 201);
   assert.equal((await call('GET', '/api/auth/me')).data.user.nick, 'Tester');
-  assert.equal((await call('POST', '/api/auth/register', { nick: 'tester', password: 'secret1' })).status, 409);
+  assert.equal((await call('POST', '/api/auth/register', { nick: 'tester', password: 'correct-horse-9' })).status, 409);
   await call('POST', '/api/auth/logout', {});
   cookie = '';
   assert.equal((await call('POST', '/api/auth/login', { nick: 'Tester', password: 'wrong!!' })).status, 401);
-  assert.equal((await call('POST', '/api/auth/login', { nick: 'tester', password: 'secret1' })).status, 200);
+  assert.equal((await call('POST', '/api/auth/login', { nick: 'tester', password: 'correct-horse-9' })).status, 200);
 });
 
 test('чужой Origin и не-JSON отклоняются', async () => {

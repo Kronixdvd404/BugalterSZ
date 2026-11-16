@@ -99,3 +99,27 @@ CREATE TABLE IF NOT EXISTS user_hidden (
   at      INTEGER NOT NULL,
   PRIMARY KEY (uid, item_id)
 );
+
+-- Безопасность входа и регистрации
+CREATE INDEX IF NOT EXISTS idx_sessions_uid ON sessions (uid);
+
+-- Неудачные попытки входа по нику и IP (окно блокировки 15 минут, записи старше часа удаляются)
+CREATE TABLE IF NOT EXISTS auth_fail (
+  nick_lc TEXT NOT NULL,
+  ip      TEXT NOT NULL,
+  ts      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_fail ON auth_fail (nick_lc, ts);
+
+-- Успешные регистрации по IP (лимит в час)
+CREATE TABLE IF NOT EXISTS reg_hits (
+  ip TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reg_hits ON reg_hits (ip, ts);
+
+-- «Скелет» ника: ники, похожие друг на друга (кириллица/латиница, разделители), считаются занятыми
+CREATE TABLE IF NOT EXISTS nick_skeleton (
+  sk  TEXT PRIMARY KEY,
+  uid TEXT NOT NULL
+);

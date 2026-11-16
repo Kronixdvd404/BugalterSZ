@@ -12,7 +12,7 @@ test('turso: регистрация, сканер и лента через ад�
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bsz-turso-'));
   const client = createClient({ url: 'file:' + path.join(dir, 't.db') });
   await client.executeMultiple(fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
-  const env = { DB: wrapLibsql(client), DEMO: '1', BACKGROUND_SCAN: '0' };
+  const env = { DB: wrapLibsql(client), DEMO: '1', HIBP_OFF: '1', BACKGROUND_SCAN: '0' };
   try {
     const call = (p, init = {}) =>
       handle(new Request('http://localhost' + p, { ...init, headers: { 'content-type': 'application/json', 'cf-connecting-ip': '1.2.3.4', ...(init.headers || {}) } }), env);

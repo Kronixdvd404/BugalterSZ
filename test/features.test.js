@@ -9,7 +9,7 @@ import { moduleName, isModuleItem } from '../src/modules.js';
 import { buildBaseline, makeIndex, evaluate } from '../src/deals.js';
 
 const schema = fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
-const env = { DB: openDatabase(':memory:', schema), DEMO: '1', BACKGROUND_SCAN: '0' };
+const env = { DB: openDatabase(':memory:', schema), DEMO: '1', HIBP_OFF: '1', BACKGROUND_SCAN: '0' };
 let cookie = '';
 async function call(method, path, body) {
   const res = await handle(new Request('http://x.test' + path, { method, headers: { 'content-type': 'application/json', 'cf-connecting-ip': '9.9.9.9', cookie }, body: body === undefined ? undefined : JSON.stringify(body) }), env);

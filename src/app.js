@@ -1,6 +1,12 @@
 import { getConfig } from './config.js';
 import { HttpError, bad, json, newId, timingSafeEqual } from './util.js';
-import { NICK_RE, hashPassword, verifyPassword, startSession, endSession, userFromRequest, limitAuth } from './auth.js';
+import {
+  NICK_RE, hashPassword, verifyPassword, needsRehash, startSession, endSession, clearSessionCookies, currentTokenHash, dropUserSessions,
+  userFromRequest, limitAuth, clientIp, checkLoginLock, recordLoginFail, clearLoginFails, limitRegistration, recordRegistration
+} from './auth.js';
+import { isPwned } from './hibp.js';
+import { passwordProblem } from './passwords.js';
+import { nickSkeleton, isReservedNick } from './nick.js';
 import { ExboApi } from './exbo.js';
 import { DemoApi } from './demo.js';
 import { loadCatalog, searchCatalog, tick, getFeed, getDeals, getStatus, itemDetail } from './scanner.js';
@@ -66,29 +72,51 @@ async function touchLogin(db, uid) {
   }
 }
 
+const PWNED = 'Этот пароль найден в базах утечек, придумайте другой';
+
+/** Ник со «скелетом», уже занятым похожим ником. Если таблицы ещё нет, проверка пропускается. */
+async function skeletonTaken(db, sk) {
+  try {
+    return Boolean(await db.prepare('SELECT 1 FROM nick_skeleton WHERE sk = ?1').bind(sk).first());
+  } catch (e) {
+    console.error('[auth] nick_skeleton недоступна:', e && e.message);
+    return false;
+  }
+}
+
 route(
   'POST',
   '/api/auth/register',
   async ({ db, body, request, config, secure }) => {
     await limitAuth(db, request);
+    await limitRegistration(db, request, config.regPerHour);
     const nick = String(body.nick || '').trim();
     const password = String(body.password || '');
     if (!NICK_RE.test(nick)) throw bad('Ник: 3–20 символов, буквы, цифры, _ . -');
-    if (password.length < 6) throw bad('Пароль должен быть не короче 6 символов');
-    if (password.length > 128) throw bad('Пароль слишком длинный');
+    if (isReservedNick(nick)) throw bad('Этот ник недоступен');
+    const problem = passwordProblem(password, nick);
+    if (problem) throw bad(problem);
     const exists = await db.prepare('SELECT 1 FROM users WHERE nick_lc = ?1').bind(nick.toLowerCase()).first();
-    if (exists) throw bad('Этот ник уже занят', 409);
+    const sk = nickSkeleton(nick);
+    if (exists || (await skeletonTaken(db, sk))) throw bad('Этот ник уже занят', 409);
+    if (config.hibp && (await isPwned(password))) throw bad(PWNED);
 
     const user = { id: newId(), nick, ledger_start: 0 };
     try {
       await db
         .prepare('INSERT INTO users (id, nick, nick_lc, pass, created_at) VALUES (?1, ?2, ?3, ?4, ?5)')
-        .bind(user.id, nick, nick.toLowerCase(), await hashPassword(password, config.pbkdf2Iter), Date.now())
+        .bind(user.id, nick, nick.toLowerCase(), await hashPassword(password, config.pbkdf2Iter, config.pepper), Date.now())
         .run();
     } catch (e) {
       if (/UNIQUE/i.test(String(e.message))) throw bad('Этот ник уже занят', 409);
       throw e;
     }
+    try {
+      await db.prepare('INSERT OR IGNORE INTO nick_skeleton (sk, uid) VALUES (?1, ?2)').bind(sk, user.id).run();
+    } catch (e) {
+      console.error('[auth] скелет ника не сохранён:', e && e.message);
+    }
+    await recordRegistration(db, request);
     const cookie = await startSession(db, user, secure);
     await touchLogin(db, user.id);
     return json({ user: { nick } }, 201, { 'Set-Cookie': cookie });
@@ -103,10 +131,25 @@ route(
     await limitAuth(db, request);
     const nick = String(body.nick || '').trim();
     const password = String(body.password || '');
+    const nickLc = nick.toLowerCase().slice(0, 64);
+    const ip = clientIp(request);
+    await checkLoginLock(db, nickLc, ip);
     const user = await db.prepare('SELECT id, nick, pass FROM users WHERE nick_lc = ?1').bind(nick.toLowerCase()).first();
     // Хеш считаем и для несуществующего ника, чтобы по времени ответа нельзя было угадать ники.
-    const ok = user ? await verifyPassword(password, user.pass) : (await hashPassword(password, config.pbkdf2Iter), false);
-    if (!user || !ok) throw bad('Неверный ник или пароль', 401);
+    const ok = user ? await verifyPassword(password, user.pass, config.pepper) : (await hashPassword(password, config.pbkdf2Iter, config.pepper), false);
+    if (!user || !ok) {
+      await recordLoginFail(db, nickLc, ip);
+      throw bad('Неверный ник или пароль', 401);
+    }
+    await clearLoginFails(db, nickLc, ip);
+    if (needsRehash(user.pass, config.pbkdf2Iter, config.pepper)) {
+      // Хеш старого вида (без перца или с меньшим числом итераций): пока пароль у нас в руках, обновляем его.
+      try {
+        await db.prepare('UPDATE users SET pass = ?1 WHERE id = ?2').bind(await hashPassword(password, config.pbkdf2Iter, config.pepper), user.id).run();
+      } catch (e) {
+        console.error('[auth] не удалось обновить хеш пароля:', e && e.message);
+      }
+    }
     const cookie = await startSession(db, user, secure);
     await touchLogin(db, user.id);
     return json({ user: { nick: user.nick } }, 200, { 'Set-Cookie': cookie });
@@ -134,6 +177,54 @@ route('GET', '/api/account', async ({ db, user }) => {
     login = { last_login: Date.now(), prev_login: 0 };
   }
   return json({ nick: user.nick, createdAt: u ? u.created_at : null, lastLogin: login.last_login, prevLogin: login.prev_login || null });
+});
+
+/** Подтверждение действия паролем (смена пароля, удаление). Неверный пароль считается неудачной попыткой входа. Статус 403, а не 401, чтобы сайт не разлогинил человека. */
+async function confirmPassword({ db, user, request, config }, password) {
+  const nickLc = user.nick.toLowerCase().slice(0, 64);
+  const ip = clientIp(request);
+  await checkLoginLock(db, nickLc, ip);
+  const row = await db.prepare('SELECT pass FROM users WHERE id = ?1').bind(user.id).first();
+  if (!row || !(await verifyPassword(String(password || ''), row.pass, config.pepper))) {
+    await recordLoginFail(db, nickLc, ip);
+    throw bad('Неверный пароль', 403);
+  }
+  await clearLoginFails(db, nickLc, ip);
+}
+
+route('POST', '/api/account/password', async (ctx) => {
+  const { db, user, body, request, config } = ctx;
+  await limitAuth(db, request);
+  await confirmPassword(ctx, body.current);
+  const next = String(body.next || '');
+  if (next === String(body.current || '')) throw bad('Новый пароль совпадает с текущим');
+  const problem = passwordProblem(next, user.nick);
+  if (problem) throw bad(problem);
+  if (config.hibp && (await isPwned(next))) throw bad(PWNED);
+  await db.prepare('UPDATE users SET pass = ?1 WHERE id = ?2').bind(await hashPassword(next, config.pbkdf2Iter, config.pepper), user.id).run();
+  // после смены пароля остаётся только текущая сессия: остальные (в том числе украденные) закрываются
+  await dropUserSessions(db, user.id, await currentTokenHash(request));
+  return json({ ok: true });
+});
+
+route('POST', '/api/account/logout-all', async ({ db, user, secure }) => {
+  await dropUserSessions(db, user.id);
+  return json({ ok: true }, 200, { 'Set-Cookie': clearSessionCookies(secure) });
+});
+
+route('DELETE', '/api/account', async (ctx) => {
+  const { db, user, body, request, secure } = ctx;
+  await limitAuth(db, request);
+  await confirmPassword(ctx, body.password);
+  await dropUserSessions(db, user.id);
+  await db.batch([db.prepare('DELETE FROM ledger WHERE uid = ?1').bind(user.id), db.prepare('DELETE FROM notes WHERE uid = ?1').bind(user.id), db.prepare('DELETE FROM users WHERE id = ?1').bind(user.id)]);
+  // таблицы появились позже остальных: если их ещё нет, удаление аккаунта всё равно должно пройти
+  for (const sql of ['DELETE FROM user_login WHERE uid = ?1', 'DELETE FROM user_hidden WHERE uid = ?1', 'DELETE FROM nick_skeleton WHERE uid = ?1']) {
+    try {
+      await db.prepare(sql).bind(user.id).run();
+    } catch (_) {}
+  }
+  return json({ ok: true }, 200, { 'Set-Cookie': clearSessionCookies(secure) });
 });
 
 /* ---------- личный чёрный список предметов ---------- */
@@ -464,6 +555,7 @@ export async function handle(request, env) {
     let body = {};
     if (mutating) {
       // Защита от CSRF поверх SameSite: запрос должен прийти с этого же сайта и как JSON.
+      if (request.headers.get('sec-fetch-site') === 'cross-site') throw new HttpError('Запрещено', 403);
       const origin = request.headers.get('origin');
       if (origin && new URL(origin).host !== url.host) throw new HttpError('Запрещено', 403);
       const text = await request.text();

@@ -21,6 +21,9 @@ export function getConfig(env) {
     regions: regions.length ? regions : ['ru', 'eu'],
     pbkdf2Iter: Math.max(10000, Math.min(100000, num(env.PBKDF2_ITER, 100000))), // 100000 — максимум в Workers
     tickSecret: env.TICK_SECRET || '',
+    pepper: String(env.PASSWORD_PEPPER || ''), // секрет для HMAC пароля перед PBKDF2 (не терять: без него хеши с перцем не проверить)
+    hibp: !flag(env.HIBP_OFF), // проверка пароля по базе утечек Have I Been Pwned (отправляется только 5 символов SHA-1)
+    regPerHour: Math.max(1, Math.min(100, num(env.REG_PER_HOUR, 5))), // регистраций в час с одного IP
     blacklist: makeBlacklist(env), // предметы, скрытые из ленты (src/blacklist.js)
     moduleItems: String(env.MODULE_ITEMS || '').split(',').map((s) => s.trim()).filter(Boolean), // id предметов с названиями модулей, помимо категории weapon_modules
     backgroundScan: flag(env.BACKGROUND_SCAN), // на своём сервере сканер крутится сам, вкладки его не дёргают
