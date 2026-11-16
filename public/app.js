@@ -473,7 +473,7 @@
   /* ===================== подвал сайта ===================== */
 
   // discord: сюда вставь ссылку-приглашение на свой сервер
-  const SITE = { name: 'BugalterSZ', developer: 'Kronixdvd404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
+  const SITE = { name: 'BugalterSZ', developer: 'Kronix404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
 
   /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
   function siteFooter() {
