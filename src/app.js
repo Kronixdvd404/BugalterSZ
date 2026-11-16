@@ -1,5 +1,5 @@
 import { getConfig } from './config.js';
-import { HttpError, bad, json, newId } from './util.js';
+import { HttpError, bad, json, newId, timingSafeEqual } from './util.js';
 import { NICK_RE, hashPassword, verifyPassword, startSession, endSession, userFromRequest, limitAuth } from './auth.js';
 import { ExboApi } from './exbo.js';
 import { DemoApi } from './demo.js';
@@ -371,7 +371,13 @@ async function catalogOf(ctx) {
   }
 }
 
-route('GET', '/api/auction/status', async (ctx) => json(await cached('status', 12000, async () => getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) }))));
+// Сырой текст ошибки (может содержать куски ответов EXBO) наружу не отдаём: только лимит API или общая фраза.
+const publicError = (e) => (!e ? '' : String(e).startsWith('Лимит API') ? e : 'Ошибка сканера, подробности в логах сервера');
+
+route('GET', '/api/auction/status', async (ctx) => {
+  const s = await cached('status', 12000, async () => getStatus(ctx.db, { config: ctx.config, catalog: await catalogOf(ctx) }));
+  return json({ ...s, lastError: publicError(s.lastError) });
+});
 
 route('GET', '/api/auction/feed', async (ctx) => {
   const { db, config, query } = ctx;
@@ -423,7 +429,7 @@ route(
   async (ctx) => {
     const { db, config, request, user } = ctx;
     const secret = request.headers.get('x-tick-secret');
-    const byCron = Boolean(config.tickSecret) && secret === config.tickSecret;
+    const byCron = Boolean(config.tickSecret) && typeof secret === 'string' && timingSafeEqual(secret, config.tickSecret);
     if (!user && !byCron) throw bad('Нужно войти', 401);
     if (config.backgroundScan) return json({ skipped: true, background: true }); // сканер работает на сервере сам
     const catalog = await catalogOf(ctx);

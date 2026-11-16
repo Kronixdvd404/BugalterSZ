@@ -526,6 +526,9 @@ button.lot:hover { background: var(--surface-2); }
   display: flex; align-items: center; justify-content: space-between; gap: 12px 28px; flex-wrap: wrap;
 }
 .foot-left, .foot-right { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; min-width: 0; }
+.foot-left { flex: 1 1 auto; }
+.foot-right { flex: 0 0 auto; flex-wrap: nowrap; margin-left: auto; }
+.foot-dev { white-space: nowrap; }
 .foot-brand { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--text); text-decoration: none; display: inline-flex; align-items: baseline; }
 .foot-brand b { font-weight: 600; background: var(--acid); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .foot-copy { color: var(--faint); }
@@ -540,6 +543,7 @@ button.lot:hover { background: var(--surface-2); }
 @media (max-width: 760px) {
   .site-footer-in { padding: 18px 16px; flex-direction: column; align-items: flex-start; }
   .foot-dot { display: none; }
+  .foot-right { margin-left: 0; flex-wrap: wrap; }
 }
 
 /* ---------- юридические страницы (terms.html, privacy.html) ---------- */

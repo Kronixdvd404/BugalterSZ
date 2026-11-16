@@ -300,6 +300,7 @@ export async function tick({ db, api, config, catalog }) {
   } else if (!meta.cycle_start) stmts.push(setMeta(db, 'cycle_start', started));
   if (stats.scanned) stmts.push(addMeta(db, 'scanned', stats.scanned));
   if (stats.errors) stmts.push(addMeta(db, 'errors', stats.errors));
+  if (stats.lastError) console.error('[scanner]', stats.lastError);
   const lastError = stats.lastError || (retryAfter ? `Лимит API (429), пауза ${retryAfter} с` : '');
   if (lastError !== (meta.last_error || '')) stmts.push(setMeta(db, 'last_error', lastError));
 

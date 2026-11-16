@@ -473,7 +473,7 @@
   /* ===================== подвал сайта ===================== */
 
   // discord: сюда вставь ссылку-приглашение на свой сервер
-  const SITE = { name: 'BugalterSZ', developer: 'Kronixdvd404', year: 2026, discord: 'https://discord.gg/https://discord.gg/K2geV4Vmjm' };
+  const SITE = { name: 'BugalterSZ', developer: 'Kronixdvd404', year: 2026, discord: 'https://discord.gg/K2geV4Vmjm' };
 
   /** Подвал на всех страницах: название, копирайт, юридические ссылки, разработчик. */
   function siteFooter() {
@@ -1123,8 +1123,8 @@
 
       holder.append(backButton(), h('div', { class: 'card empty' }, t('Загружаю…')));
       load(true);
-      const t = setInterval(() => load(false), 20000);
-      onLeave(() => clearInterval(t));
+      const pollTimer = setInterval(() => load(false), 20000);
+      onLeave(() => clearInterval(pollTimer));
     }
 
     showHome();
@@ -1147,10 +1147,11 @@
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', t('График цен последних продаж'));
     svg.innerHTML =
-      '<defs><linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--acid-1)"/><stop offset="1" style="stop-color:var(--acid-2)"/></linearGradient>' +
-      '<linearGradient id="sf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--acid-1)" stop-opacity=".22"/><stop offset="1" style="stop-color:var(--acid-1)" stop-opacity="0"/></linearGradient></defs>' +
+      '<defs><linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" data-c="--acid-1"/><stop offset="1" data-c="--acid-2"/></linearGradient>' +
+      '<linearGradient id="sf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" data-c="--acid-1" stop-opacity=".22"/><stop offset="1" data-c="--acid-1" stop-opacity="0"/></linearGradient></defs>' +
       `<path d="${line} L${W} ${H} L0 ${H} Z" fill="url(#sf)"/>` +
       `<path d="${line}" fill="none" stroke="url(#sl)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    svg.querySelectorAll('stop[data-c]').forEach((el) => el.style.setProperty('stop-color', 'var(' + el.getAttribute('data-c') + ')'));
     const first = points[0][0];
     const last = points[points.length - 1][0];
     const days = Math.max(1, Math.round((last - first) / 86400000));
@@ -1181,11 +1182,11 @@
     const bInc = h('button', { type: 'button', class: 'is-income', 'aria-pressed': 'true', onclick: () => setType('income') }, t('Доход'));
     const bExp = h('button', { type: 'button', class: 'is-expense', 'aria-pressed': 'false', onclick: () => setType('expense') }, t('Расход'));
     seg.append(bInc, bExp);
-    function setType(t) {
-      type = t;
-      bInc.setAttribute('aria-pressed', String(t === 'income'));
-      bExp.setAttribute('aria-pressed', String(t === 'expense'));
-      submit.replaceChildren(icon('plus'), t === 'income' ? t('Добавить доход') : t('Добавить расход'));
+    function setType(next) {
+      type = next;
+      bInc.setAttribute('aria-pressed', String(next === 'income'));
+      bExp.setAttribute('aria-pressed', String(next === 'expense'));
+      submit.replaceChildren(icon('plus'), next === 'income' ? t('Добавить доход') : t('Добавить расход'));
     }
 
     amount.addEventListener('input', () => {
